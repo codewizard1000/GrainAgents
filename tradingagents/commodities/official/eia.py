@@ -28,6 +28,24 @@ SERIES = {
 }
 
 
+def _redact_api_key(value: object, *, api_key: str) -> object:
+    """Remove the credential from EIA response metadata before archival."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                "[REDACTED]"
+                if key.lower() in {"api_key", "apikey"}
+                else _redact_api_key(item, api_key=api_key)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_api_key(item, api_key=api_key) for item in value]
+    if isinstance(value, str):
+        return value.replace(api_key, "[REDACTED]")
+    return value
+
+
 def conservative_available_at(period: date) -> datetime:
     local = datetime.combine(
         period + timedelta(days=7),
@@ -101,10 +119,13 @@ def load_corn_ethanol(
             payload = response.json()
             rows = payload["response"]["data"]
         except (requests.RequestException, KeyError, TypeError, ValueError) as exc:
-            raise OfficialDataError(f"EIA ethanol {metric} request failed: {exc}") from exc
+            safe_error = str(_redact_api_key(str(exc), api_key=key))
+            raise OfficialDataError(
+                f"EIA ethanol {metric} request failed: {safe_error}"
+            ) from exc
         if not isinstance(rows, list):
             raise OfficialDataError(f"EIA ethanol {metric} response has no data list")
-        payloads[metric] = payload
+        payloads[metric] = _redact_api_key(payload, api_key=key)
         selected[metric] = _select_observation(
             rows,
             as_of=as_of,

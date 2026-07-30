@@ -229,7 +229,7 @@ class _EiaResponse:
 
 
 class _EiaSession:
-    def get(self, url: str, **_kwargs):
+    def get(self, url: str, **kwargs):
         is_production = "YOP" in url
         values = (1133, 1094, 1040) if is_production else (24726, 24481, 24391)
         rows = [
@@ -244,7 +244,15 @@ class _EiaSession:
                 strict=True,
             )
         ]
-        return _EiaResponse({"response": {"data": rows}})
+        return _EiaResponse(
+            {
+                "response": {"data": rows},
+                "request": {
+                    "url": f"{url}?api_key={kwargs['params']['api_key']}",
+                    "api_key": kwargs["params"]["api_key"],
+                },
+            }
+        )
 
 
 @pytest.mark.unit
@@ -261,6 +269,7 @@ def test_eia_current_run_uses_only_conservatively_available_weeks():
     assert snapshot.section["values"]["production_period"] == "2026-07-17"
     assert snapshot.section["values"]["stocks"] == 24481
     assert b"not-written-to-output" not in snapshot.raw_content
+    assert snapshot.raw_content.count(b"[REDACTED]") == 4
     assert snapshot.source["api_key_mode"] == "configured"
 
 
