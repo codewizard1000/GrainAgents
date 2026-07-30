@@ -264,9 +264,85 @@ estimate. GrainAgents does not convert barrels to corn bushels here.
 """
 
 
+def render_weather_report(evidence: dict[str, Any]) -> str:
+    section = evidence["weather"]
+    if not section:
+        return "# Weather and drought\n\nWeather evidence was unavailable.\n"
+    values = section["values"]
+    drought_period = values["drought_valid_date"]
+    as_of_period = evidence["as_of"][:10]
+    missing = ", ".join(section["missing"])
+    return f"""# Corn weather and drought
+
+**Status:** {section["status"]}
+
+**Method:** {section["methodology"]}
+
+| Metric | Value | Evidence |
+|---|---:|---|
+| Corn area in moderate drought or worse (D1-D4) | {_number(values["d1_or_worse_percent"], 1)}% | {_official_fact("corn_drought_d1_or_worse_percent", drought_period)} |
+| Corn area in severe drought or worse (D2-D4) | {_number(values["d2_or_worse_percent"], 1)}% | {_official_fact("corn_drought_d2_or_worse_percent", drought_period)} |
+| Corn area in extreme drought or worse (D3-D4) | {_number(values["d3_or_worse_percent"], 1)}% | {_official_fact("corn_drought_d3_or_worse_percent", drought_period)} |
+| Sample-weighted 7-day precipitation | {_number(values["sample_weighted_7_day_precipitation_mm"], 1)} mm | {_official_fact("corn_weather_sample_weighted_7_day_precipitation_mm", as_of_period)} |
+| Sample-weighted 7-day mean temperature | {_number(values["sample_weighted_7_day_mean_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_mean_temperature_c", as_of_period)} |
+| Sample-weighted 7-day maximum temperature | {_number(values["sample_weighted_7_day_maximum_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_maximum_temperature_c", as_of_period)} |
+| Sample coverage of intended corn acres | {_number(values["sample_coverage_percent_of_intended_acres"], 1)}% | {_official_fact("corn_weather_sample_coverage_percent_of_intended_acres", as_of_period)} |
+
+This is useful current context, but it is not yet a complete weather-and-yield
+model. Remaining weather fields: {missing}.
+"""
+
+
+def render_forecast_report(evidence: dict[str, Any]) -> str:
+    section = evidence["forecast"]
+    if not section:
+        return "# Quantitative forecast\n\nForecast evidence was unavailable.\n"
+    rows = "\n".join(
+        "| {horizon} | {median} | {low50} to {high50} | "
+        "{low80} to {high80} | {confidence} | {disagreement} |".format(
+            horizon=item["horizon_trading_days"],
+            median=_number(item["median_projected_price"]),
+            low50=_number(item["prediction_interval_50"][0]),
+            high50=_number(item["prediction_interval_50"][1]),
+            low80=_number(item["prediction_interval_80"][0]),
+            high80=_number(item["prediction_interval_80"][1]),
+            confidence=_number(item["forecast_confidence_score"], 1),
+            disagreement=_number(item["model_disagreement_score"], 1),
+        )
+        for item in section["forecast_horizons"]
+    )
+    scenarios = section["scenarios"]["probabilities"]
+    return f"""# Transparent quantitative forecast baseline
+
+**Contract:** `{section["contract_symbol"]}`
+
+**Status:** `{section["status"]}`
+
+**Model version:** `{section["model_version"]}`
+
+| Trading days | Median USD/bu | 50% interval | 80% interval | Confidence | Disagreement |
+|---:|---:|---:|---:|---:|---:|
+{rows}
+
+## Distribution-constrained scenarios
+
+| Scenario | Probability |
+|---|---:|
+| Bull | {_number(scenarios["bull"] * 100, 1)}% |
+| Base | {_number(scenarios["base"] * 100, 1)}% |
+| Bear | {_number(scenarios["bear"] * 100, 1)}% |
+
+These are price-only statistical baselines evaluated with rolling historical
+residuals from the exact contract. They are research benchmarks, not trading
+recommendations or evidence of live predictive skill.
+"""
+
+
 __all__ = [
     "render_demand_report",
+    "render_forecast_report",
     "render_positioning_report",
     "render_supply_demand_report",
     "render_technical_report",
+    "render_weather_report",
 ]

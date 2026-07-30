@@ -140,7 +140,7 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert evidence["curve"]["status"] == "ready"
     assert evidence["facts"]
     assert manifest["asset_type"] == "commodity_future"
-    assert manifest["status"] == "technical_ready_publication_blocked"
+    assert manifest["status"] == "forecast_baseline_ready_publication_blocked"
     assert manifest["human_approval_required"] is True
     assert manifest["publication_ready"] is False
     assert len(market_data) == 230
@@ -151,6 +151,10 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert (run_dir / "supply_demand_report.md").exists()
     assert (run_dir / "positioning_report.md").exists()
     assert (run_dir / "demand_report.md").exists()
+    assert (run_dir / "weather_report.md").exists()
+    assert (run_dir / "forecast_report.md").exists()
+    assert (run_dir / "quantitative_forecast.json").exists()
+    assert (run_dir / "scenario_report.json").exists()
 
 
 def test_foundation_command_rejects_stock_analysts(tmp_path):

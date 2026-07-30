@@ -1,0 +1,54 @@
+# Milestone 4 weather and forecast progress
+
+## Implemented
+
+- Added current corn-area drought exposure from Drought.gov's USDA
+  NASS/U.S. Drought Monitor overlay.
+- Added a twelve-state National Weather Service seven-day point sample,
+  weighted by USDA NASS 2026 intended corn acres.
+- Added current-endpoint safety: current weather calls are rejected for
+  historical as-of dates and NWS grid updates after the run timestamp are
+  excluded.
+- Added raw weather archives, source hashes, stable fact IDs, and a
+  deterministic weather report.
+- Added five transparent price baselines: random walk, weekly seasonal naive,
+  long-run drift, local linear trend, and exponentially weighted daily change.
+- Added rolling horizon-specific validation, inverse-MAE ensemble weights,
+  empirical residual prediction intervals, support/resistance probabilities,
+  excursion estimates, confidence and disagreement scores.
+- Added deterministic scenarios constrained by the 20-trading-day forecast
+  distribution.
+- Added quantitative forecast, scenario, and forecast-report artifacts.
+
+## Live verification
+
+On 2026-07-30, the official weather adapter returned:
+
+- 39% of corn area in moderate drought or worse
+- 20% in severe drought or worse
+- 6% in extreme drought or worse
+- 28.378 mm acreage-sample-weighted seven-day precipitation
+- 23.229 C acreage-sample-weighted seven-day mean temperature
+- 82.968% coverage of USDA's intended 2026 corn acres
+
+Using the archived 310-observation `ZCZ26` history, the baseline ensemble
+produced deterministic 5-, 20-, and 60-trading-day distributions. The
+60-trading-day result had materially lower confidence and higher model
+disagreement than the shorter horizons, as expected from the wider residual
+distribution.
+
+## Current limitations
+
+- The NWS layer samples one disclosed point per state and does not represent
+  within-state spatial variation.
+- Production-weighted rainfall and temperature anomalies need a vintage-safe
+  1991-2020 normal and observation pipeline.
+- A 14-day weather layer, calibrated weather risk score, and yield-impact range
+  are still missing, so weather remains `partial`.
+- Forecast models are currently price-only and do not yet ingest the official
+  fundamental or weather features.
+- Rolling backtests estimate historical residual behavior but are not a
+  substitute for scoring forecasts saved before outcomes occur.
+- EIA's public `DEMO_KEY` can return HTTP 429 after repeated test calls. Set a
+  free `EIA_API_KEY` for reliable unattended runs.
+- Publication remains blocked and human approval remains mandatory.

@@ -52,6 +52,7 @@ On 2026-07-30, the live adapters retrieved:
 - CFTC retrieval currently requests the latest 80 reports; older historical
   runs fail safely.
 - CFTC positioning is market-level, not specific to one delivery contract.
-- FAS export sales, production-weighted weather/drought, seasonal baselines,
-  probability calibration, and forecast reports remain incomplete.
+- FAS export sales, complete weather anomalies, and live probability
+  calibration remain incomplete. The first price-only baseline ensemble is
+  documented in the Milestone 4 status.
 - The run remains publication-blocked and requires human approval.

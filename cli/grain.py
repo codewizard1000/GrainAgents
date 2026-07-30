@@ -21,12 +21,15 @@ from tradingagents.commodities.evidence import (
     build_evidence_package,
     normalize_horizons,
 )
+from tradingagents.commodities.forecasting import build_quantitative_forecast
 from tradingagents.commodities.official import build_official_evidence
 from tradingagents.commodities.reporting import (
     render_demand_report,
+    render_forecast_report,
     render_positioning_report,
     render_supply_demand_report,
     render_technical_report,
+    render_weather_report,
 )
 from tradingagents.commodities.tools import (
     get_contract_history as contract_history_tool,
@@ -175,11 +178,15 @@ def analyze(
             if official_data
             else None
         )
+        forecast_run = build_quantitative_forecast(
+            official_run.evidence if official_run is not None else run.evidence,
+            history=run.primary_history,
+        )
     except (ValueError, VendorError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
-    evidence = official_run.evidence if official_run is not None else run.evidence
+    evidence = forecast_run.evidence
     payload = evidence.to_dict()
     run_dir = (
         results_dir
@@ -216,6 +223,17 @@ def analyze(
     )
     demand_path = run_dir / "demand_report.md"
     demand_path.write_text(render_demand_report(payload), encoding="utf-8")
+    weather_path = run_dir / "weather_report.md"
+    weather_path.write_text(render_weather_report(payload), encoding="utf-8")
+    forecast_report_path = run_dir / "forecast_report.md"
+    forecast_report_path.write_text(
+        render_forecast_report(payload),
+        encoding="utf-8",
+    )
+    quantitative_path = run_dir / "quantitative_forecast.json"
+    write_json(quantitative_path, forecast_run.quantitative_forecast)
+    scenario_path = run_dir / "scenario_report.json"
+    write_json(scenario_path, forecast_run.scenarios)
     official_archive_paths = write_official_archives(
         run_dir / "official_data",
         official_run.archives if official_run is not None else (),
@@ -228,15 +246,22 @@ def analyze(
         "run_id": evidence.run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "code_version": _project_version(),
-        "prompt_version": "deterministic-commodity-evidence-v2",
+        "prompt_version": "deterministic-commodity-evidence-v3",
         "data_versions": {
             "market_provider": run.primary_history["provider"],
             "market_dataset": run.primary_history["dataset"],
             "technical_methodology": payload["technical"]["methodology_version"],
+            "forecast_methodology": payload["forecast"]["model_version"],
             "official_sources": [
                 source["dataset"]
                 for source in payload["sources"]
-                if source.get("provider") in {"USDA", "CFTC", "EIA"}
+                if source.get("provider")
+                in {
+                    "USDA",
+                    "CFTC",
+                    "EIA",
+                    "NOAA/NIDIS, NWS, and USDA NASS",
+                }
             ],
         },
         "asset_type": "commodity_future",
@@ -257,6 +282,10 @@ def analyze(
             "supply_demand_report.md",
             "positioning_report.md",
             "demand_report.md",
+            "weather_report.md",
+            "forecast_report.md",
+            "quantitative_forecast.json",
+            "scenario_report.json",
             "source_audit.csv",
             *[
                 str(Path(path).relative_to(run_dir).as_posix())

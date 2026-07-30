@@ -8,14 +8,16 @@ system for corn, soybeans, and Chicago SRW wheat. It adapts
 evidence-grounded, contract-specific research workflow for newsletter
 publication.
 
-> **Development status:** Milestone 3 official-data foundation. Delivery-specific
+> **Development status:** Milestone 4 forecast baseline. Delivery-specific
 > corn, soybean, and Chicago SRW wheat contracts are typed and validated, and a
 > Databento adapter now retrieves exact-contract daily bars, settlement,
 > volume, open interest, and instrument definitions. The `analyze` command now
 > builds deterministic technical evidence, a five-contract futures curve, the
 > current point-in-time USDA WASDE corn balance, CFTC corn positioning, and EIA
-> weekly ethanol demand proxies. Weather, exports, forecasting, and publication
-> remain intentionally incomplete.
+> weekly ethanol demand proxies. It now adds production-weighted corn drought
+> exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
+> transparent forecast ensemble. Weather anomalies, exports, calibrated live
+> forecast scoring, and publication remain intentionally incomplete.
 
 The first functional target is a weekly December corn outlook with point-in-time
 evidence, statistical forecast distributions, bull/base/bear scenarios, source
@@ -36,11 +38,13 @@ grainagents analyze `
 
 It writes a contract-scoped run manifest, populated evidence JSON, normalized
 Parquet market history, the normalized provider archive, raw official-source
-archives, evidence-linked technical/supply-demand/positioning reports, and a
-CSV source audit. For a current-day run, it uses the
+archives, evidence-linked technical/supply-demand/positioning/weather/forecast
+reports, quantitative forecast and scenario JSON, and a CSV source audit. For
+a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
-The run remains `publication_ready: false` until weather, export demand,
-forecasting, and editorial approval are implemented.
+The run remains `publication_ready: false` until complete weather anomalies,
+export demand, out-of-sample forecast scoring, and editorial approval are
+implemented.
 
 For internal testing with Databento, set these values in the ignored `.env`
 file:
@@ -82,6 +86,12 @@ government-shutdown backlog rather than guessing publication dates. The EIA
 current API is refused for historical as-of runs because it is not a vintage
 database. Use `--no-official-data` only for offline technical testing.
 
+The forecast ensemble combines random-walk, weekly seasonal-naive, drift,
+local-linear-trend, and exponentially weighted price-change baselines. Model
+weights come from rolling historical mean absolute error, while intervals come
+from rolling residual distributions. The output is labelled research-only
+until saved forecasts accumulate genuine out-of-sample scores.
+
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)
 - [Upstream baseline record](docs/upstream-baseline.md)
@@ -89,6 +99,7 @@ database. Use `--no-official-data` only for offline technical testing.
 - [Milestone 1 progress report](docs/milestone-1-status.md)
 - [Milestone 2 market-data progress](docs/milestone-2-status.md)
 - [Milestone 3 official-data progress](docs/milestone-3-status.md)
+- [Milestone 4 weather/forecast progress](docs/milestone-4-status.md)
 
 ## Upstream project documentation
 

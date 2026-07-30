@@ -17,6 +17,7 @@ from tradingagents.commodities.official.wasde import (
     parse_corn_balance,
     parse_release_index,
 )
+from tradingagents.commodities.official.weather import load_corn_weather
 
 UTC = timezone.utc
 
@@ -204,6 +205,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         wasde_loader=wasde_loader,
         cftc_loader=cftc_loader,
         eia_loader=None,
+        weather_loader=None,
     )
     payload = run.evidence.to_dict()
 
@@ -270,4 +272,91 @@ def test_eia_refuses_current_api_for_historical_replay():
             today=date(2026, 7, 30),
             session=_EiaSession(),
             api_key="fixture",
+        )
+
+
+class _WeatherResponse:
+    def __init__(self, *, content: bytes = b"", payload: dict | None = None):
+        self.content = content
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        assert self._payload is not None
+        return self._payload
+
+
+class _WeatherSession:
+    def get(self, url: str, **_kwargs):
+        if "CornDMstats.csv" in url:
+            rows = [
+                "USDMWEEK,CATACRES,DM,TOTACRES,CATPRCNT,CUMLACRES,CUMLPRCNT",
+                "USDM_20260728,1,0,10,52.0,1,1",
+                "USDM_20260728,1,1,10,39.0,1,1",
+                "USDM_20260728,1,2,10,20.0,1,1",
+                "USDM_20260728,1,3,10,6.0,1,1",
+                "USDM_20260728,1,4,10,0.0,1,1",
+            ]
+            return _WeatherResponse(content=("\n".join(rows) + "\n").encode())
+        if "/points/" in url:
+            return _WeatherResponse(
+                payload={
+                    "properties": {
+                        "forecastGridData": "https://api.weather.gov/gridpoints/FIXTURE"
+                    }
+                }
+            )
+        return _WeatherResponse(
+            payload={
+                "properties": {
+                    "updateTime": "2026-07-30T12:00:00+00:00",
+                    "validTimes": "2026-07-30T12:00:00+00:00/P7D",
+                    "temperature": {
+                        "values": [
+                            {
+                                "validTime": "2026-07-30T12:00:00+00:00/P7D",
+                                "value": 25,
+                            }
+                        ]
+                    },
+                    "quantitativePrecipitation": {
+                        "values": [
+                            {
+                                "validTime": "2026-07-30T12:00:00+00:00/P7D",
+                                "value": 30,
+                            }
+                        ]
+                    },
+                }
+            }
+        )
+
+
+@pytest.mark.unit
+def test_weather_snapshot_uses_production_weighted_drought_and_acreage_sample():
+    snapshot = load_corn_weather(
+        as_of=datetime(2026, 7, 30, 16, tzinfo=UTC),
+        today=date(2026, 7, 30),
+        session=_WeatherSession(),
+        retrieved_at=datetime(2026, 7, 30, 16, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert snapshot.section["status"] == "partial"
+    assert values["d1_or_worse_percent"] == 39
+    assert values["sample_weighted_7_day_precipitation_mm"] == 30
+    assert values["sample_weighted_7_day_mean_temperature_c"] == 25
+    assert 80 < values["sample_coverage_percent_of_intended_acres"] < 90
+    assert len(snapshot.observations) == 9
+
+
+@pytest.mark.unit
+def test_weather_current_endpoints_are_refused_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_corn_weather(
+            as_of=datetime(2026, 7, 29, 16, tzinfo=UTC),
+            today=date(2026, 7, 30),
+            session=_WeatherSession(),
         )
