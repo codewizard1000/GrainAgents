@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Windows folder metadata
+desktop.ini
+
 # C extensions
 *.so
 

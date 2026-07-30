@@ -1,3 +1,30 @@
+<!-- GrainAgents fork identity. Keep the upstream TradingAgents documentation and attribution below. -->
+
+# GrainAgents
+
+GrainAgents is a multi-agent grain-market research and probabilistic forecasting
+system for corn, soybeans, and Chicago SRW wheat. It adapts
+[TradingAgents](https://github.com/TauricResearch/TradingAgents) into an
+evidence-grounded, contract-specific research workflow for newsletter
+publication.
+
+> **Development status:** Milestone 0 (repository and documentation). The
+> untouched upstream baseline at commit `a33fd4c` passes 576 tests with 2
+> optional skips. Commodity functionality is not implemented yet.
+
+The first functional target is a weekly December corn outlook with point-in-time
+evidence, statistical forecast distributions, bull/base/bear scenarios, source
+auditing, charts, and newsletter-ready Markdown. GrainAgents is research
+software—not an automated trading bot—and v1 requires human approval before
+publication.
+
+- [Implementation blueprint](instructions.md)
+- [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)
+- [Upstream baseline record](docs/upstream-baseline.md)
+- [Milestone 1 checklist](docs/milestone-1-checklist.md)
+
+## Upstream project documentation
+
 <p align="center">
   <img src="assets/TauricResearch.png" style="width: 60%; height: auto;">
 </p>
