@@ -20,7 +20,7 @@ from tradingagents.agents import (
     create_sentiment_analyst,
     create_trader,
 )
-from tradingagents.agents.utils.agent_states import AgentState
+from tradingagents.agents.utils.agent_states import AgentState, GrainAgentState
 
 from .analyst_execution import build_analyst_execution_plan
 from .conditional_logic import ConditionalLogic
@@ -59,7 +59,9 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
 
     def setup_graph(
-        self, selected_analysts=("market", "social", "news", "fundamentals")
+        self,
+        selected_analysts=("market", "social", "news", "fundamentals"),
+        asset_type: str = "stock",
     ):
         """Set up and compile the agent workflow graph.
 
@@ -71,6 +73,12 @@ class GraphSetup:
                 - "fundamentals": Fundamentals analyst
         """
         plan = build_analyst_execution_plan(selected_analysts)
+        commodity_mode = asset_type == "commodity_future"
+        if commodity_mode and [spec.key for spec in plan.specs] != ["market"]:
+            raise ValueError(
+                "Milestone 1 commodity_future graphs support only the market "
+                "(technical/futures-contract) analyst"
+            )
 
         analyst_factories = {
             "market": lambda: create_market_analyst(self.quick_thinking_llm),
@@ -92,7 +100,7 @@ class GraphSetup:
         portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
 
         # Create workflow
-        workflow = StateGraph(AgentState)
+        workflow = StateGraph(GrainAgentState if commodity_mode else AgentState)
 
         # Add analyst nodes to the graph
         for spec in plan.specs:
@@ -100,15 +108,17 @@ class GraphSetup:
             workflow.add_node(spec.clear_node, create_msg_delete())
             workflow.add_node(spec.tool_node, self.tool_nodes[spec.key])
 
-        # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
-        workflow.add_node("Research Manager", research_manager_node)
-        workflow.add_node("Trader", trader_node)
-        workflow.add_node("Aggressive Analyst", aggressive_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Conservative Analyst", conservative_analyst)
-        workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        # The Milestone 1 commodity path is deliberately technical-only. It
+        # stops before stock-oriented debate, trader, risk, and portfolio nodes.
+        if not commodity_mode:
+            workflow.add_node("Bull Researcher", bull_researcher_node)
+            workflow.add_node("Bear Researcher", bear_researcher_node)
+            workflow.add_node("Research Manager", research_manager_node)
+            workflow.add_node("Trader", trader_node)
+            workflow.add_node("Aggressive Analyst", aggressive_analyst)
+            workflow.add_node("Neutral Analyst", neutral_analyst)
+            workflow.add_node("Conservative Analyst", conservative_analyst)
+            workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
         # Define edges
         # Start with the first analyst
@@ -128,29 +138,33 @@ class GraphSetup:
             )
             workflow.add_edge(current_tools, current_analyst)
 
-            # Connect to next analyst or to Bull Researcher if this is the last analyst
+            # Connect to the next analyst. Commodity Milestone 1 ends after its
+            # sole technical analyst; the upstream path proceeds to debate.
             if i < len(plan.specs) - 1:
                 workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
+            elif commodity_mode:
+                workflow.add_edge(current_clear, END)
             else:
                 workflow.add_edge(current_clear, "Bull Researcher")
 
-        # Both research-debate edges share the complete DEBATE_PATH_MAP (#1088).
-        for debate_node in ("Bull Researcher", "Bear Researcher"):
-            workflow.add_conditional_edges(
-                debate_node,
-                self.conditional_logic.should_continue_debate,
-                DEBATE_PATH_MAP,
-            )
-        workflow.add_edge("Research Manager", "Trader")
-        workflow.add_edge("Trader", "Aggressive Analyst")
-        # All three risk edges share the complete RISK_ANALYSIS_PATH_MAP (#1088).
-        for risk_node in ("Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"):
-            workflow.add_conditional_edges(
-                risk_node,
-                self.conditional_logic.should_continue_risk_analysis,
-                RISK_ANALYSIS_PATH_MAP,
-            )
+        if not commodity_mode:
+            # Both research-debate edges share the complete DEBATE_PATH_MAP (#1088).
+            for debate_node in ("Bull Researcher", "Bear Researcher"):
+                workflow.add_conditional_edges(
+                    debate_node,
+                    self.conditional_logic.should_continue_debate,
+                    DEBATE_PATH_MAP,
+                )
+            workflow.add_edge("Research Manager", "Trader")
+            workflow.add_edge("Trader", "Aggressive Analyst")
+            # All three risk edges share the complete RISK_ANALYSIS_PATH_MAP (#1088).
+            for risk_node in ("Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"):
+                workflow.add_conditional_edges(
+                    risk_node,
+                    self.conditional_logic.should_continue_risk_analysis,
+                    RISK_ANALYSIS_PATH_MAP,
+                )
 
-        workflow.add_edge("Portfolio Manager", END)
+            workflow.add_edge("Portfolio Manager", END)
 
         return workflow

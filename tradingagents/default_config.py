@@ -19,6 +19,9 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
+    "GRAINAGENTS_ASSET_TYPE":             "asset_type",
+    "GRAINAGENTS_REQUIRE_POINT_IN_TIME_DATA": "require_point_in_time_data",
+    "GRAINAGENTS_REJECT_UNVERIFIED_NUMBERS":  "reject_unverified_numbers",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -77,6 +80,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
+    # Asset/domain settings. Stock remains the upstream-compatible default.
+    "asset_type": "stock",
+    "supported_commodities": ["corn", "soybeans", "wheat_srw"],
+    "forecast_horizons": [5, 20, 60],
+    "prediction_quantiles": [0.10, 0.25, 0.50, 0.75, 0.90],
+    "commodity_data_vendors": {},
+    "require_point_in_time_data": True,
+    "reject_unverified_numbers": True,
     # LLM settings
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.5",

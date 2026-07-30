@@ -7,6 +7,35 @@ from tradingagents.agents.utils.agent_utils import (
     get_stock_data,
     get_verified_market_snapshot,
 )
+from tradingagents.commodities.tools import (
+    get_contract_history,
+    get_futures_contract,
+)
+
+COMMODITY_TECHNICAL_SYSTEM_MESSAGE = """You are the GrainAgents Technical and
+Futures-Contract Analyst. Analyze only the delivery-specific grain futures
+contract identified in the state.
+
+First call get_futures_contract to verify the contract, delivery month, crop
+year, first-notice date, and last-trade date. Then call get_contract_history for
+delivery-specific price history. If contract-aware history is unavailable,
+state that core data is missing and stop numerical analysis. Never substitute a
+continuous series, nearby contract, ETF, or cash index.
+
+When verified data is available, analyze trend, moving averages, RSI, MACD,
+stochastic oscillator, ATR, Bollinger Bands, support/resistance, volume, open
+interest, calendar spreads, carry, seasonality, volatility, and days to first
+notice/expiration. Clearly label facts versus interpretations. Do not invent
+prices, indicators, probabilities, dates, or percentages. Do not request
+company financial statements or insider transactions. The primary conclusion
+must be Bullish, Neutral, or Bearish research—not BUY/HOLD/SELL or personalized
+trading advice."""
+
+
+def get_market_tools(asset_type: str):
+    if asset_type == "commodity_future":
+        return [get_futures_contract, get_contract_history]
+    return [get_stock_data, get_indicators, get_verified_market_snapshot]
 
 
 def create_market_analyst(llm):
@@ -14,12 +43,8 @@ def create_market_analyst(llm):
     def market_analyst_node(state):
         current_date = state["trade_date"]
         instrument_context = get_instrument_context_from_state(state)
-
-        tools = [
-            get_stock_data,
-            get_indicators,
-            get_verified_market_snapshot,
-        ]
+        asset_type = state.get("asset_type", "stock")
+        tools = get_market_tools(asset_type)
 
         system_message = (
             """You are a trading assistant tasked with analyzing financial markets. Your role is to select the **most relevant indicators** for a given market condition or trading strategy from the following list. The goal is to choose up to **8 indicators** that provide complementary insights without redundancy. Categories and each category's indicators are:
@@ -54,6 +79,22 @@ Write a very detailed and nuanced report of the trends you observe. Provide spec
             + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
             + get_language_instruction()
         )
+        if asset_type == "commodity_future":
+            system_message = (
+                COMMODITY_TECHNICAL_SYSTEM_MESSAGE + get_language_instruction()
+            )
+
+        completion_instruction = (
+            "Do not emit a transaction proposal. Return a contract-specific "
+            "Bullish/Neutral/Bearish research conclusion and explicitly report "
+            "missing core data."
+            if asset_type == "commodity_future"
+            else (
+                "If you or any other assistant has the FINAL TRANSACTION PROPOSAL: "
+                "**BUY/HOLD/SELL** or deliverable, prefix your response with FINAL "
+                "TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+            )
+        )
 
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -63,8 +104,7 @@ Write a very detailed and nuanced report of the trends you observe. Provide spec
                     " Use the provided tools to progress towards answering the question."
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+                    " {completion_instruction}"
                     " You have access to the following tools: {tool_names}."
                     " Today's date is {current_date}; treat it as 'now' for all analysis and tool-call date ranges. {instrument_context}\n"
                     "{system_message}",
@@ -77,6 +117,7 @@ Write a very detailed and nuanced report of the trends you observe. Provide spec
         prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(completion_instruction=completion_instruction)
 
         chain = prompt | llm.bind_tools(tools)
 
@@ -87,9 +128,12 @@ Write a very detailed and nuanced report of the trends you observe. Provide spec
         if len(result.tool_calls) == 0:
             report = result.content
 
-        return {
+        update = {
             "messages": [result],
             "market_report": report,
         }
+        if asset_type == "commodity_future":
+            update["technical_report"] = report
+        return update
 
     return market_analyst_node

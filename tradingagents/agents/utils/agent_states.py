@@ -74,3 +74,34 @@ class AgentState(MessagesState):
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
+
+
+class GrainAgentState(MessagesState):
+    """Commodity-specific state with unambiguous contract semantics."""
+
+    asset_type: Annotated[str, "Always commodity_future for GrainAgents runs"]
+    commodity: Annotated[str, "Normalized commodity name"]
+    contract_symbol: Annotated[str, "Delivery-specific futures contract"]
+    crop_year: Annotated[str, "Crop-marketing year, for example 2026/27"]
+    analysis_date: Annotated[str, "Point-in-time analysis date"]
+    trade_date: Annotated[str, "Compatibility alias for analysis_date"]
+    forecast_horizons: Annotated[list[int], "Trading-day forecast horizons"]
+    evidence_package_uri: Annotated[str, "Immutable evidence package location"]
+    instrument_context: Annotated[str, "Deterministic contract identity"]
+    company_of_interest: Annotated[str, "Compatibility alias for contract_symbol"]
+    sender: Annotated[str, "Agent that sent the latest message"]
+
+    market_report: Annotated[str, "Compatibility alias for the technical report"]
+    technical_report: Annotated[str, "Technical and futures-contract report"]
+    supply_demand_report: Annotated[str, "Supply-and-demand report"]
+    weather_report: Annotated[str, "Weather-and-yield report"]
+    demand_report: Annotated[str, "Export and domestic demand report"]
+    positioning_report: Annotated[str, "Positioning and sentiment report"]
+    news_report: Annotated[str, "Grain news and macro report"]
+    quantitative_forecast_report: Annotated[str, "Deterministic forecast explanation"]
+    bull_case: Annotated[str, "Evidence-linked bull case"]
+    bear_case: Annotated[str, "Evidence-linked bear case"]
+    scenario_report: Annotated[str, "Probability-constrained scenarios"]
+    risk_report: Annotated[str, "Commodity risk review"]
+    final_outlook: Annotated[str, "Final market outlook"]
+    newsletter_draft: Annotated[str, "Human-review newsletter draft"]

@@ -994,6 +994,15 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
     config["anthropic_effort"] = selections.get("anthropic_effort")
     config["output_language"] = selections.get("output_language", "English")
+    config["asset_type"] = selections.get("asset_type", "stock")
+    if config["asset_type"] == "commodity_future":
+        from tradingagents.commodities.contracts import resolve_contract
+
+        contract = resolve_contract(
+            selections["ticker"],
+            as_of=selections.get("analysis_date"),
+        )
+        config["commodity"] = contract.commodity.value
     # --checkpoint/--no-checkpoint overrides only when explicitly given; omitting
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
@@ -1115,13 +1124,27 @@ def run_analysis(checkpoint: bool | None = None):
         # the real company (#814); the CLI builds state directly rather than
         # going through propagate(), so this must happen on the CLI path too.
         instrument_context = graph.resolve_instrument_context(
-            selections["ticker"], selections["asset_type"]
+            selections["ticker"],
+            selections["asset_type"],
+            as_of=selections["analysis_date"],
         )
+        contract = None
+        if selections["asset_type"] == "commodity_future":
+            from tradingagents.commodities.contracts import resolve_contract
+
+            contract = resolve_contract(
+                selections["ticker"],
+                as_of=selections["analysis_date"],
+            )
         init_agent_state = graph.propagator.create_initial_state(
             selections["ticker"],
             selections["analysis_date"],
             asset_type=selections["asset_type"],
             instrument_context=instrument_context,
+            commodity=contract.commodity.value if contract else "",
+            crop_year=contract.crop_year if contract else "",
+            forecast_horizons=config.get("forecast_horizons"),
+            evidence_package_uri=config.get("evidence_package_uri", ""),
         )
         # Pass callbacks to graph config for tool execution tracking
         # (LLM tracking is handled separately via LLM constructor)

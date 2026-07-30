@@ -28,6 +28,8 @@ from tradingagents.agents.utils.agent_utils import (
     resolve_instrument_identity,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
+from tradingagents.commodities.contracts import resolve_contract
+from tradingagents.commodities.tools import get_contract_history, get_futures_contract
 from tradingagents.dataflows.config import set_config
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
@@ -83,6 +85,11 @@ class TradingAgentsGraph:
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
+        self.asset_type = self.config.get("asset_type", "stock")
+        if self.asset_type == "commodity_future" and tuple(selected_analysts) != ("market",):
+            raise ValueError(
+                "Milestone 1 commodity_future runs require selected_analysts=('market',)"
+            )
 
         # Update the interface's config
         set_config(self.config)
@@ -146,7 +153,10 @@ class TradingAgentsGraph:
         self.selected_analysts = tuple(selected_analysts)
 
         # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        self.workflow = self.graph_setup.setup_graph(
+            selected_analysts,
+            asset_type=self.asset_type,
+        )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
@@ -187,19 +197,14 @@ class TradingAgentsGraph:
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
+        asset_type = getattr(self, "asset_type", "stock") if self is not None else "stock"
+        market_tools = (
+            [get_futures_contract, get_contract_history]
+            if asset_type == "commodity_future"
+            else [get_stock_data, get_indicators, get_verified_market_snapshot]
+        )
         return {
-            "market": ToolNode(
-                [
-                    # Core stock data tools
-                    get_stock_data,
-                    # Technical indicators
-                    get_indicators,
-                    # Deterministic verification snapshot (bound to the analyst
-                    # LLM and required by its prompt; must be executable here or
-                    # the call fails and the model reports it "unavailable").
-                    get_verified_market_snapshot,
-                ]
-            ),
+            "market": ToolNode(market_tools),
             "social": ToolNode(
                 [
                     # News tools for social media analysis
@@ -333,7 +338,12 @@ class TradingAgentsGraph:
         if updates:
             self.memory_log.batch_update_with_outcomes(updates)
 
-    def resolve_instrument_context(self, ticker: str, asset_type: str = "stock") -> str:
+    def resolve_instrument_context(
+        self,
+        ticker: str,
+        asset_type: str = "stock",
+        as_of: str | None = None,
+    ) -> str:
         """Resolve ticker identity once and return the full instrument context.
 
         Deterministic yfinance lookup (cached, fail-open) injected into a
@@ -342,6 +352,9 @@ class TradingAgentsGraph:
         path and the CLI call this so the resolved identity reaches the whole
         graph regardless of entry point.
         """
+        if asset_type == "commodity_future":
+            resolve_contract(ticker, as_of=as_of, reject_expired=as_of is not None)
+            return build_instrument_context(ticker, asset_type)
         identity = resolve_instrument_identity(ticker)
         return build_instrument_context(ticker, asset_type, identity)
 
@@ -357,9 +370,12 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            "horizons=" + ",".join(
+                str(value) for value in self.config.get("forecast_horizons", [])
+            ),
         ])
 
-    def propagate(self, company_name, trade_date, asset_type: str = "stock"):
+    def propagate(self, company_name, trade_date, asset_type: str | None = None):
         """Run the trading agents graph for a company on a specific date.
 
         ``asset_type`` selects between the stock pipeline (default) and the
@@ -369,10 +385,17 @@ class TradingAgentsGraph:
         a per-ticker SqliteSaver so a crashed run can resume from the last
         successful node on a subsequent invocation with the same ticker+date.
         """
+        asset_type = asset_type or self.config.get("asset_type", "stock")
+        configured_asset_type = self.config.get("asset_type", "stock")
+        if asset_type != configured_asset_type and configured_asset_type == "commodity_future":
+            raise ValueError(
+                f"Graph was configured for {configured_asset_type}, not {asset_type}"
+            )
         self.ticker = company_name
 
         # Resolve any pending memory-log entries for this ticker before the pipeline runs.
-        self._resolve_pending_entries(company_name)
+        if asset_type != "commodity_future":
+            self._resolve_pending_entries(company_name)
 
         # Recompile with a checkpointer if the user opted in.
         if self.config.get("checkpoint_enabled"):
@@ -420,14 +443,32 @@ class TradingAgentsGraph:
         """Execute the graph and write the resulting state to disk and memory log."""
         # Initialize state — inject memory log context for PM and the
         # deterministically resolved instrument identity for all agents.
-        past_context = self.memory_log.get_past_context(company_name)
-        instrument_context = self.resolve_instrument_context(company_name, asset_type)
+        commodity_mode = asset_type == "commodity_future"
+        contract = None
+        if commodity_mode:
+            contract = resolve_contract(
+                company_name,
+                as_of=str(trade_date),
+                expected_commodity=self.config.get("commodity"),
+            )
+            past_context = ""
+        else:
+            past_context = self.memory_log.get_past_context(company_name)
+        instrument_context = self.resolve_instrument_context(
+            company_name,
+            asset_type,
+            as_of=str(trade_date) if commodity_mode else None,
+        )
         init_agent_state = self.propagator.create_initial_state(
             company_name,
             trade_date,
             asset_type=asset_type,
             past_context=past_context,
             instrument_context=instrument_context,
+            commodity=contract.commodity.value if contract else "",
+            crop_year=contract.crop_year if contract else "",
+            forecast_horizons=self.config.get("forecast_horizons"),
+            evidence_package_uri=self.config.get("evidence_package_uri", ""),
         )
         args = self.propagator.get_graph_args()
 
@@ -462,6 +503,18 @@ class TradingAgentsGraph:
         # Store current state for reflection.
         self.curr_state = final_state
 
+        if commodity_mode:
+            self._log_commodity_state(trade_date, final_state)
+            if self.config.get("checkpoint_enabled"):
+                clear_checkpoint(
+                    self.config["data_cache_dir"],
+                    company_name,
+                    str(trade_date),
+                    self._run_signature(asset_type),
+                )
+            report = final_state.get("technical_report") or final_state.get("market_report", "")
+            return final_state, report
+
         # Log state to disk.
         self._log_state(trade_date, final_state)
 
@@ -480,6 +533,29 @@ class TradingAgentsGraph:
             )
 
         return final_state, self.process_signal(final_state["final_trade_decision"])
+
+    def _log_commodity_state(self, trade_date, final_state):
+        """Log the technical-only Milestone 1 state without stock decision fields."""
+        record = {
+            "asset_type": "commodity_future",
+            "commodity": final_state.get("commodity", ""),
+            "contract_symbol": final_state.get("contract_symbol", self.ticker),
+            "crop_year": final_state.get("crop_year", ""),
+            "analysis_date": final_state.get("analysis_date", str(trade_date)),
+            "forecast_horizons": final_state.get("forecast_horizons", []),
+            "evidence_package_uri": final_state.get("evidence_package_uri", ""),
+            "technical_report": (
+                final_state.get("technical_report")
+                or final_state.get("market_report", "")
+            ),
+        }
+        self.log_states_dict[str(trade_date)] = record
+        safe_contract = safe_ticker_component(self.ticker)
+        directory = Path(self.config["results_dir"]) / safe_contract / "GrainAgents_logs"
+        directory.mkdir(parents=True, exist_ok=True)
+        log_path = directory / f"technical_state_{trade_date}.json"
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=4)
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""

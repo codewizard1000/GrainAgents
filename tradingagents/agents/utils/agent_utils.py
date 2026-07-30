@@ -131,6 +131,22 @@ def build_instrument_context(
     classification are injected so agents anchor to the real company rather
     than pattern-matching the price chart to a wrong one (#814).
     """
+    if asset_type == "commodity_future":
+        from tradingagents.commodities.contracts import resolve_contract
+
+        contract = resolve_contract(ticker, reject_expired=False)
+        return (
+            f"The instrument to analyze is the delivery-specific "
+            f"{contract.delivery_month_name} {contract.delivery_year} "
+            f"{contract.commodity_name} futures contract `{contract.symbol}` on "
+            f"{contract.exchange}, crop year {contract.crop_year}. Use this exact "
+            "contract in every tool call and report. A continuous futures series "
+            "may be used only as separately labelled long-horizon context; never "
+            "describe it as this continuously tradable contract. Do not request "
+            "company financial statements, insider transactions, or emit "
+            "BUY/HOLD/SELL as the primary output."
+        )
+
     is_crypto = asset_type == "crypto"
     instrument_label = "asset" if is_crypto else "instrument"
     context = (

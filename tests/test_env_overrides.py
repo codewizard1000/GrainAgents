@@ -26,6 +26,27 @@ def test_no_env_uses_built_in_defaults(monkeypatch):
     assert dc.DEFAULT_CONFIG["backend_url"] is None
     assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
     assert dc.DEFAULT_CONFIG["checkpoint_enabled"] is False
+    assert dc.DEFAULT_CONFIG["asset_type"] == "stock"
+    assert dc.DEFAULT_CONFIG["supported_commodities"] == [
+        "corn",
+        "soybeans",
+        "wheat_srw",
+    ]
+    assert dc.DEFAULT_CONFIG["forecast_horizons"] == [5, 20, 60]
+    assert dc.DEFAULT_CONFIG["require_point_in_time_data"] is True
+    assert dc.DEFAULT_CONFIG["reject_unverified_numbers"] is True
+
+
+def test_grainagents_env_overrides(monkeypatch):
+    dc = _reload_with_env(
+        monkeypatch,
+        GRAINAGENTS_ASSET_TYPE="commodity_future",
+        GRAINAGENTS_REQUIRE_POINT_IN_TIME_DATA="false",
+        GRAINAGENTS_REJECT_UNVERIFIED_NUMBERS="true",
+    )
+    assert dc.DEFAULT_CONFIG["asset_type"] == "commodity_future"
+    assert dc.DEFAULT_CONFIG["require_point_in_time_data"] is False
+    assert dc.DEFAULT_CONFIG["reject_unverified_numbers"] is True
 
 
 def test_string_overrides(monkeypatch):

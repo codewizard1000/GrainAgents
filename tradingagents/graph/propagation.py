@@ -22,6 +22,10 @@ class Propagator:
         asset_type: str = "stock",
         past_context: str = "",
         instrument_context: str = "",
+        commodity: str = "",
+        crop_year: str = "",
+        forecast_horizons: list[int] | None = None,
+        evidence_package_uri: str = "",
     ) -> dict[str, Any]:
         """Create the initial state for the agent graph.
 
@@ -31,7 +35,7 @@ class Propagator:
         fall back to ticker-only context via
         ``get_instrument_context_from_state``.
         """
-        return {
+        state = {
             "messages": [("human", company_name)],
             "company_of_interest": company_name,
             "asset_type": asset_type,
@@ -67,6 +71,30 @@ class Propagator:
             "sentiment_report": "",
             "news_report": "",
         }
+        if asset_type == "commodity_future":
+            state.update(
+                {
+                    "commodity": commodity,
+                    "contract_symbol": company_name,
+                    "crop_year": crop_year,
+                    "analysis_date": str(trade_date),
+                    "forecast_horizons": list(forecast_horizons or [5, 20, 60]),
+                    "evidence_package_uri": evidence_package_uri,
+                    "technical_report": "",
+                    "supply_demand_report": "",
+                    "weather_report": "",
+                    "demand_report": "",
+                    "positioning_report": "",
+                    "quantitative_forecast_report": "",
+                    "bull_case": "",
+                    "bear_case": "",
+                    "scenario_report": "",
+                    "risk_report": "",
+                    "final_outlook": "",
+                    "newsletter_draft": "",
+                }
+            )
+        return state
 
     def get_graph_args(self, callbacks: list | None = None) -> dict[str, Any]:
         """Get arguments for the graph invocation.
