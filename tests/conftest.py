@@ -26,11 +26,16 @@ _API_KEY_ENV_VARS = (
     "OPENROUTER_API_KEY",
     "AZURE_OPENAI_API_KEY",
     "ALPHA_VANTAGE_API_KEY",
+    "DATABENTO_API_KEY",
+    "FMP_API_KEY",
 )
 
 
 @pytest.fixture(autouse=True)
 def _dummy_api_keys(monkeypatch):
+    # A developer's local .env may select a billable market-data provider.
+    # Unit tests opt out unless they explicitly set the provider themselves.
+    monkeypatch.setenv("GRAIN_DATA_PROVIDER", "")
     for env_var in _API_KEY_ENV_VARS:
         # `or` not a .get default: an env var present but empty (e.g. a key left
         # blank in a .env copied from .env.example) must still get the placeholder.

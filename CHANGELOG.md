@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — GrainAgents fork
+
+### Added
+
+- Databento adapter for exact CBOT corn, soybean, and Chicago SRW wheat
+  delivery-contract history.
+- Daily OHLCV, settlement, volume, open-interest, and instrument-definition
+  normalization with point-in-time availability timestamps.
+- `grainagents market-data` diagnostic command for internal testing.
+
+### Security
+
+- Databento credentials are read from the git-ignored `.env` file and are never
+  emitted in normalized results.
+- Provider output is explicitly labelled `internal_testing_only`.
+
 All notable changes to TradingAgents are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

@@ -35,6 +35,7 @@ def test_no_env_uses_built_in_defaults(monkeypatch):
     assert dc.DEFAULT_CONFIG["forecast_horizons"] == [5, 20, 60]
     assert dc.DEFAULT_CONFIG["require_point_in_time_data"] is True
     assert dc.DEFAULT_CONFIG["reject_unverified_numbers"] is True
+    assert dc.DEFAULT_CONFIG["commodity_data_vendors"] == {}
 
 
 def test_grainagents_env_overrides(monkeypatch):

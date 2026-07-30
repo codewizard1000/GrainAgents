@@ -8,10 +8,11 @@ system for corn, soybeans, and Chicago SRW wheat. It adapts
 evidence-grounded, contract-specific research workflow for newsletter
 publication.
 
-> **Development status:** Milestone 1 commodity foundation. Delivery-specific
-> corn, soybean, and Chicago SRW wheat contracts are typed and validated; the
-> commodity-only technical graph path and immutable evidence skeleton are
-> implemented. The full suite passes 597 tests with 2 optional skips.
+> **Development status:** Milestone 2 market-data foundation. Delivery-specific
+> corn, soybean, and Chicago SRW wheat contracts are typed and validated, and a
+> Databento adapter now retrieves exact-contract daily bars, settlement,
+> volume, open interest, and instrument definitions. Forecasting, curve
+> construction, and publication remain intentionally incomplete.
 
 The first functional target is a weekly December corn outlook with point-in-time
 evidence, statistical forecast distributions, bull/base/bear scenarios, source
@@ -31,16 +32,40 @@ grainagents analyze `
 ```
 
 It writes a contract-scoped run manifest, evidence JSON, and technical Markdown.
-Until a licensed delivery-contract market-data adapter is configured, the run
-is marked `blocked_missing_core_market_data` and publishes no price levels or
-indicators. This is intentional: GrainAgents does not substitute a continuous
-series or fabricate missing numbers.
+The `analyze` command still produces the Milestone 1 evidence skeleton and is
+marked `blocked_missing_core_market_data`; it does not yet feed provider results
+into forecasts or publish price levels.
+
+For internal testing with Databento, set these values in the ignored `.env`
+file:
+
+```dotenv
+GRAIN_DATA_PROVIDER=databento
+DATABENTO_API_KEY=your_key_here
+```
+
+Then fetch a delivery-specific contract:
+
+```powershell
+grainagents market-data `
+  --contract ZCZ26 `
+  --start 2026-07-20 `
+  --end 2026-07-29 `
+  --output results/ZCZ26-market-data.json
+```
+
+The adapter resolves the vendor's raw symbol to one instrument before
+downloading data, rejects ambiguous matches, normalizes CBOT cents per bushel
+to USD per bushel, and records event and availability timestamps. Its output is
+labelled `internal_testing_only`; do not redistribute or publish it without the
+appropriate Databento and exchange data rights.
 
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)
 - [Upstream baseline record](docs/upstream-baseline.md)
 - [Milestone 1 checklist](docs/milestone-1-checklist.md)
 - [Milestone 1 progress report](docs/milestone-1-status.md)
+- [Milestone 2 market-data progress](docs/milestone-2-status.md)
 
 ## Upstream project documentation
 

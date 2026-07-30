@@ -14,6 +14,10 @@ from tradingagents.commodities.evidence import (
     build_evidence_package,
     normalize_horizons,
 )
+from tradingagents.commodities.tools import (
+    get_contract_history as contract_history_tool,
+)
+from tradingagents.dataflows.errors import VendorError
 
 app = typer.Typer(
     help="Contract-specific grain-market research and forecasting.",
@@ -86,6 +90,53 @@ Configure a licensed, contract-aware market-data adapter, archive the raw
 response, and populate the point-in-time evidence package before technical
 analysis is allowed to publish.
 """
+
+
+@app.command("market-data")
+def market_data(
+    contract: str = typer.Option(
+        ...,
+        help="Delivery-specific symbol such as ZCZ26",
+    ),
+    start_date: str = typer.Option(
+        ...,
+        "--start",
+        help="Inclusive start date in YYYY-MM-DD format",
+    ),
+    end_date: str = typer.Option(
+        ...,
+        "--end",
+        help="Inclusive end date in YYYY-MM-DD format",
+    ),
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            help="Optional JSON output path; otherwise print to standard output",
+        ),
+    ] = None,
+) -> None:
+    """Fetch normalized history for one exact delivery contract."""
+    try:
+        raw = contract_history_tool.invoke(
+            {
+                "contract_symbol": contract,
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+        )
+    except (ValueError, VendorError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    rendered = json.dumps(json.loads(raw), indent=2, sort_keys=True) + "\n"
+    if output is None:
+        typer.echo(rendered, nl=False)
+        return
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered, encoding="utf-8")
+    typer.echo(str(output.resolve()))
 
 
 @app.command()

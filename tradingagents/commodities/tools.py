@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Annotated
 
 from langchain_core.tools import tool
@@ -11,6 +12,7 @@ from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.errors import VendorNotConfiguredError
 
 from .contracts import resolve_contract
+from .providers import load_contract_history
 
 
 @tool
@@ -31,19 +33,25 @@ def get_contract_history(
 ) -> str:
     """Retrieve delivery-specific futures history from a configured provider.
 
-    Milestone 1 defines the provider boundary but deliberately ships no
-    redistribution-sensitive market-data adapter. It fails loudly until one is
-    configured in a later milestone.
+    The selected adapter must return the exact delivery contract. Continuous
+    history is never substituted at this boundary.
     """
     resolve_contract(contract_symbol, as_of=end_date, reject_expired=False)
-    vendors = get_config().get("commodity_data_vendors", {})
-    provider = vendors.get("contract_history")
+    config = get_config()
+    vendors = config.get("commodity_data_vendors", {})
+    if "GRAIN_DATA_PROVIDER" in os.environ:
+        provider = os.environ["GRAIN_DATA_PROVIDER"].strip()
+    else:
+        provider = str(vendors.get("contract_history", "")).strip()
     if not provider:
         raise VendorNotConfiguredError(
             "No delivery-specific commodity market-data provider is configured "
             "for get_contract_history"
         )
-    raise VendorNotConfiguredError(
-        f"Commodity market-data provider {provider!r} is configured but its adapter "
-        "is not implemented in Milestone 1"
+    payload = load_contract_history(
+        provider,
+        contract_symbol=contract_symbol,
+        start_date=start_date,
+        end_date=end_date,
     )
+    return json.dumps(payload, sort_keys=True)
