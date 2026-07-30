@@ -9,6 +9,7 @@ from tradingagents.commodities.official.cftc import (
     conservative_available_at,
     parse_corn_cot,
 )
+from tradingagents.commodities.official.eia import load_corn_ethanol
 from tradingagents.commodities.official.models import OfficialSnapshot
 from tradingagents.commodities.official.pipeline import build_official_evidence
 from tradingagents.commodities.official.wasde import (
@@ -202,6 +203,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         base,
         wasde_loader=wasde_loader,
         cftc_loader=cftc_loader,
+        eia_loader=None,
     )
     payload = run.evidence.to_dict()
 
@@ -211,3 +213,61 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
     assert "positioning" not in payload["quality"]["missing_core_data"]
     assert len(payload["facts"]) == 13
     assert len(run.archives) == 2
+
+
+class _EiaResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _EiaSession:
+    def get(self, url: str, **_kwargs):
+        is_production = "YOP" in url
+        values = (1133, 1094, 1040) if is_production else (24726, 24481, 24391)
+        rows = [
+            {
+                "period": period,
+                "value": value,
+                "series-description": "fixture",
+            }
+            for period, value in zip(
+                ("2026-07-24", "2026-07-17", "2026-07-10"),
+                values,
+                strict=True,
+            )
+        ]
+        return _EiaResponse({"response": {"data": rows}})
+
+
+@pytest.mark.unit
+def test_eia_current_run_uses_only_conservatively_available_weeks():
+    snapshot = load_corn_ethanol(
+        as_of=datetime(2026, 7, 30, 20, tzinfo=UTC),
+        today=date(2026, 7, 30),
+        session=_EiaSession(),
+        api_key="not-written-to-output",
+        retrieved_at=datetime(2026, 7, 30, 21, tzinfo=UTC),
+    )
+
+    assert snapshot.section["values"]["production"] == 1094
+    assert snapshot.section["values"]["production_period"] == "2026-07-17"
+    assert snapshot.section["values"]["stocks"] == 24481
+    assert b"not-written-to-output" not in snapshot.raw_content
+    assert snapshot.source["api_key_mode"] == "configured"
+
+
+@pytest.mark.unit
+def test_eia_refuses_current_api_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_corn_ethanol(
+            as_of=datetime(2026, 7, 29, 20, tzinfo=UTC),
+            today=date(2026, 7, 30),
+            session=_EiaSession(),
+            api_key="fixture",
+        )

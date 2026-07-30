@@ -23,6 +23,7 @@ from tradingagents.commodities.evidence import (
 )
 from tradingagents.commodities.official import build_official_evidence
 from tradingagents.commodities.reporting import (
+    render_demand_report,
     render_positioning_report,
     render_supply_demand_report,
     render_technical_report,
@@ -213,6 +214,8 @@ def analyze(
         render_positioning_report(payload),
         encoding="utf-8",
     )
+    demand_path = run_dir / "demand_report.md"
+    demand_path.write_text(render_demand_report(payload), encoding="utf-8")
     official_archive_paths = write_official_archives(
         run_dir / "official_data",
         official_run.archives if official_run is not None else (),
@@ -225,7 +228,7 @@ def analyze(
         "run_id": evidence.run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "code_version": _project_version(),
-        "prompt_version": "deterministic-commodity-technical-v1",
+        "prompt_version": "deterministic-commodity-evidence-v2",
         "data_versions": {
             "market_provider": run.primary_history["provider"],
             "market_dataset": run.primary_history["dataset"],
@@ -233,7 +236,7 @@ def analyze(
             "official_sources": [
                 source["dataset"]
                 for source in payload["sources"]
-                if source.get("provider") in {"USDA", "CFTC"}
+                if source.get("provider") in {"USDA", "CFTC", "EIA"}
             ],
         },
         "asset_type": "commodity_future",
@@ -253,6 +256,7 @@ def analyze(
             "technical_report.md",
             "supply_demand_report.md",
             "positioning_report.md",
+            "demand_report.md",
             "source_audit.csv",
             *[
                 str(Path(path).relative_to(run_dir).as_posix())

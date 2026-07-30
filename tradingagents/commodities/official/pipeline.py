@@ -8,6 +8,7 @@ from typing import Any
 
 from ..evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 from .cftc import load_corn_cot
+from .eia import load_corn_ethanol
 from .models import OfficialDataError, OfficialSnapshot
 from .wasde import load_corn_wasde
 
@@ -30,6 +31,7 @@ def build_official_evidence(
     *,
     wasde_loader: OfficialLoader = load_corn_wasde,
     cftc_loader: OfficialLoader = load_corn_cot,
+    eia_loader: OfficialLoader | None = load_corn_ethanol,
 ) -> OfficialEvidenceRun:
     """Add point-in-time-safe official evidence without hiding source failures."""
     if base.instrument.commodity.value != "corn":
@@ -37,7 +39,7 @@ def build_official_evidence(
 
     snapshots: list[OfficialSnapshot] = []
     warnings: list[str] = []
-    loader_calls = (
+    loader_calls: list[tuple[str, OfficialLoader, dict[str, Any]]] = [
         (
             "USDA WASDE",
             wasde_loader,
@@ -47,7 +49,9 @@ def build_official_evidence(
             },
         ),
         ("CFTC COT", cftc_loader, {"as_of": base.as_of}),
-    )
+    ]
+    if eia_loader is not None:
+        loader_calls.append(("EIA ethanol", eia_loader, {"as_of": base.as_of}))
     for label, loader, kwargs in loader_calls:
         try:
             snapshots.append(loader(**kwargs))

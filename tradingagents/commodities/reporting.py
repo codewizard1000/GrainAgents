@@ -71,7 +71,7 @@ def render_technical_report(evidence: dict[str, Any]) -> str:
 
 **Market-data status:** {technical_status}
 
-**Publication status:** blocked pending fundamental, weather, positioning, and forecast evidence
+**Publication status:** blocked pending {missing}
 
 **As of:** {evidence["as_of"]}
 
@@ -241,7 +241,31 @@ level context and must not be presented as positioning specific to
 """
 
 
+def render_demand_report(evidence: dict[str, Any]) -> str:
+    section = evidence["demand"]
+    if not section:
+        return "# Demand\n\nPoint-in-time-safe demand evidence was unavailable.\n"
+    values = section["values"]
+    production_period = values["production_period"]
+    stocks_period = values["stocks_period"]
+    return f"""# Corn demand proxies
+
+**Source:** EIA Weekly Petroleum Status Report
+
+**Role:** {section["role"]}
+
+| Metric | Week ending | Value | Unit | Evidence |
+|---|---|---:|---|---|
+| U.S. fuel ethanol production | {production_period} | {_number(values["production"], 0)} | thousand barrels/day | {_official_fact("eia_us_fuel_ethanol_production", production_period)} |
+| U.S. fuel ethanol ending stocks | {stocks_period} | {_number(values["stocks"], 0)} | thousand barrels | {_official_fact("eia_us_fuel_ethanol_stocks", stocks_period)} |
+
+Fuel ethanol statistics are demand context, not a direct bushel-consumption
+estimate. GrainAgents does not convert barrels to corn bushels here.
+"""
+
+
 __all__ = [
+    "render_demand_report",
     "render_positioning_report",
     "render_supply_demand_report",
     "render_technical_report",

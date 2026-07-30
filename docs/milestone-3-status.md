@@ -5,6 +5,8 @@
 - Added a shared immutable provenance contract for official observations.
 - Added USDA WASDE archive discovery and U.S. corn balance-sheet parsing.
 - Added CFTC Legacy Futures Only corn-positioning retrieval and normalization.
+- Added EIA weekly U.S. fuel-ethanol production and stocks as explicit corn
+  demand proxies.
 - Selected records by conservative `available_at` timestamps, not merely by
   report period.
 - Added raw official XML/JSON archives and SHA-256 hashes to every live run.
@@ -26,6 +28,11 @@ calendar is encoded.
 
 These policies intentionally trade some recency for leakage safety.
 
+EIA's current API is used only when the analysis date is the actual run date.
+Historical as-of calls are refused because the endpoint is not a vintage
+database. Weekly observations are conservatively delayed seven calendar days,
+and the archived response from each live run is retained for future replay.
+
 ## Live verification
 
 On 2026-07-30, the live adapters retrieved:
@@ -34,6 +41,8 @@ On 2026-07-30, the live adapters retrieved:
   production, supply, use, exports, ending stocks, and average farm price.
 - CFTC Legacy Futures Only corn positions reported for 2026-07-21, explicitly
   labelled as an aggregate across all corn delivery months.
+- EIA U.S. fuel-ethanol production and ending stocks for the latest
+  conservatively available week.
 
 ## Current limitations
 
@@ -43,6 +52,6 @@ On 2026-07-30, the live adapters retrieved:
 - CFTC retrieval currently requests the latest 80 reports; older historical
   runs fail safely.
 - CFTC positioning is market-level, not specific to one delivery contract.
-- EIA ethanol, FAS export sales, production-weighted weather/drought, seasonal
-  baselines, probability calibration, and forecast reports remain incomplete.
+- FAS export sales, production-weighted weather/drought, seasonal baselines,
+  probability calibration, and forecast reports remain incomplete.
 - The run remains publication-blocked and requires human approval.
