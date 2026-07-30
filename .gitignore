@@ -155,6 +155,7 @@ activemq-data/
 
 # Licensed GrainAgents run artifacts and market-data archives.
 /results/
+/.firecrawl/
 .envrc
 .venv
 env/

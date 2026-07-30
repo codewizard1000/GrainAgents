@@ -163,4 +163,86 @@ spread is {_number(structure["front_to_back_spread"])} USD/bu
 """
 
 
-__all__ = ["render_technical_report"]
+def _official_fact(metric: str, period: str) -> str:
+    safe_period = period.lower().replace("/", "_").replace("-", "_")
+    return f"`fact_{metric}_{safe_period}`"
+
+
+def render_supply_demand_report(evidence: dict[str, Any]) -> str:
+    section = evidence["supply_demand"]
+    if not section:
+        return "# Supply and demand\n\nUSDA WASDE evidence was unavailable for this run.\n"
+    values = section["values"]
+    crop_year = section["crop_year"]
+    rows = (
+        ("Production", "production", "million bushels"),
+        ("Total supply", "total_supply", "million bushels"),
+        ("Feed and residual", "feed_and_residual", "million bushels"),
+        ("Ethanol and by-products", "ethanol_and_byproducts", "million bushels"),
+        ("Exports", "exports", "million bushels"),
+        ("Total use", "total_use", "million bushels"),
+        ("Ending stocks", "ending_stocks", "million bushels"),
+        ("Average farm price", "average_farm_price", "USD/bu"),
+    )
+    rendered_rows = "\n".join(
+        f"| {label} | {_number(values.get(metric), 2)} | {unit} | "
+        f"{_citation(values.get(metric), _official_fact(f'wasde_corn_{metric}', crop_year))} |"
+        for label, metric, unit in rows
+    )
+    return f"""# Corn supply and demand
+
+**Crop year:** {crop_year}
+
+**WASDE release:** {section["release_date"]} (`{section["vintage"]}`)
+
+| Metric | Value | Unit | Evidence |
+|---|---:|---|---|
+{rendered_rows}
+
+These are the point-in-time values in USDA's U.S. corn balance sheet. They are
+not estimates created by GrainAgents.
+"""
+
+
+def render_positioning_report(evidence: dict[str, Any]) -> str:
+    section = evidence["positioning"]
+    if not section:
+        return "# Positioning\n\nPoint-in-time-safe CFTC COT evidence was unavailable.\n"
+    values = section["values"]
+    period = section["report_date"]
+    rows = (
+        ("Open interest", "open_interest"),
+        ("Noncommercial long", "noncommercial_long"),
+        ("Noncommercial short", "noncommercial_short"),
+        ("Noncommercial spreading", "noncommercial_spreading"),
+        ("Noncommercial net", "noncommercial_net"),
+        ("Commercial long", "commercial_long"),
+        ("Commercial short", "commercial_short"),
+        ("Commercial net", "commercial_net"),
+    )
+    rendered_rows = "\n".join(
+        f"| {label} | {_number(values[metric], 0)} | "
+        f"{_official_fact(f'cftc_corn_{metric}', period)} |"
+        for label, metric in rows
+    )
+    return f"""# Corn futures positioning
+
+**CFTC report date:** {period}
+
+**Scope:** {section["market_scope"]}
+
+| Metric | Contracts | Evidence |
+|---|---:|---|
+{rendered_rows}
+
+The CFTC Legacy report aggregates all corn futures delivery months. It is market-
+level context and must not be presented as positioning specific to
+`{evidence["instrument"]["symbol"]}`.
+"""
+
+
+__all__ = [
+    "render_positioning_report",
+    "render_supply_demand_report",
+    "render_technical_report",
+]

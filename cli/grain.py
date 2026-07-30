@@ -14,13 +14,19 @@ from tradingagents.commodities.analysis import build_technical_evidence
 from tradingagents.commodities.artifacts import (
     write_json,
     write_market_parquet,
+    write_official_archives,
     write_source_audit,
 )
 from tradingagents.commodities.evidence import (
     build_evidence_package,
     normalize_horizons,
 )
-from tradingagents.commodities.reporting import render_technical_report
+from tradingagents.commodities.official import build_official_evidence
+from tradingagents.commodities.reporting import (
+    render_positioning_report,
+    render_supply_demand_report,
+    render_technical_report,
+)
 from tradingagents.commodities.tools import (
     get_contract_history as contract_history_tool,
 )
@@ -135,6 +141,11 @@ def analyze(
         Path,
         typer.Option(help="Root directory for generated artifacts"),
     ] = DEFAULT_RESULTS_DIR,
+    official_data: bool = typer.Option(
+        True,
+        "--official-data/--no-official-data",
+        help="Fetch point-in-time USDA WASDE and CFTC COT evidence",
+    ),
 ) -> None:
     """Build exact-contract market evidence and a deterministic technical report."""
     if analysts.strip().lower() != "technical":
@@ -158,11 +169,16 @@ def analyze(
             forecast_horizons=parse_horizons(horizons),
         )
         run = build_technical_evidence(base_evidence)
+        official_run = (
+            build_official_evidence(run.evidence)
+            if official_data
+            else None
+        )
     except (ValueError, VendorError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=2) from exc
 
-    evidence = run.evidence
+    evidence = official_run.evidence if official_run is not None else run.evidence
     payload = evidence.to_dict()
     run_dir = (
         results_dir
@@ -187,6 +203,20 @@ def analyze(
     )
     report_path = run_dir / "technical_report.md"
     report_path.write_text(render_technical_report(payload), encoding="utf-8")
+    supply_demand_path = run_dir / "supply_demand_report.md"
+    supply_demand_path.write_text(
+        render_supply_demand_report(payload),
+        encoding="utf-8",
+    )
+    positioning_path = run_dir / "positioning_report.md"
+    positioning_path.write_text(
+        render_positioning_report(payload),
+        encoding="utf-8",
+    )
+    official_archive_paths = write_official_archives(
+        run_dir / "official_data",
+        official_run.archives if official_run is not None else (),
+    )
     audit_path = run_dir / "source_audit.csv"
     write_source_audit(audit_path, payload)
 
@@ -200,6 +230,11 @@ def analyze(
             "market_provider": run.primary_history["provider"],
             "market_dataset": run.primary_history["dataset"],
             "technical_methodology": payload["technical"]["methodology_version"],
+            "official_sources": [
+                source["dataset"]
+                for source in payload["sources"]
+                if source.get("provider") in {"USDA", "CFTC"}
+            ],
         },
         "asset_type": "commodity_future",
         "commodity": evidence.instrument.commodity.value,
@@ -216,7 +251,13 @@ def analyze(
             "market_data.parquet",
             "market_data_provider.json",
             "technical_report.md",
+            "supply_demand_report.md",
+            "positioning_report.md",
             "source_audit.csv",
+            *[
+                str(Path(path).relative_to(run_dir).as_posix())
+                for path in official_archive_paths
+            ],
         ],
     }
     manifest_path = run_dir / "run_manifest.json"

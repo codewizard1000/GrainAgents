@@ -122,6 +122,7 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
                 "5,20,60",
                 "--output",
                 "newsletter",
+                "--no-official-data",
                 "--results-dir",
                 str(tmp_path),
             ],
@@ -147,6 +148,8 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert "fact_zcz26_settlement" in report
     assert (run_dir / "market_data_provider.json").exists()
     assert (run_dir / "source_audit.csv").exists()
+    assert (run_dir / "supply_demand_report.md").exists()
+    assert (run_dir / "positioning_report.md").exists()
 
 
 def test_foundation_command_rejects_stock_analysts(tmp_path):

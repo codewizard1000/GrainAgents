@@ -9,6 +9,8 @@ from typing import Any
 
 import pandas as pd
 
+from .official.models import OfficialSnapshot
+
 
 def write_json(path: Path, payload: Any) -> None:
     path.write_text(
@@ -42,4 +44,25 @@ def write_source_audit(path: Path, evidence: dict[str, Any]) -> None:
             writer.writerow({field: fact.get(field) for field in fields})
 
 
-__all__ = ["write_json", "write_market_parquet", "write_source_audit"]
+def write_official_archives(
+    directory: Path,
+    snapshots: tuple[OfficialSnapshot, ...],
+) -> list[str]:
+    """Persist exact official payloads used by a run."""
+    if not snapshots:
+        return []
+    directory.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for snapshot in snapshots:
+        path = directory / snapshot.archive_filename
+        path.write_bytes(snapshot.raw_content)
+        paths.append(path.as_posix())
+    return paths
+
+
+__all__ = [
+    "write_json",
+    "write_market_parquet",
+    "write_official_archives",
+    "write_source_audit",
+]
