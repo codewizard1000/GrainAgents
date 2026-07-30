@@ -9,6 +9,10 @@
 - Daily OHLCV, settlement, volume, open-interest, and instrument-definition
   normalization with point-in-time availability timestamps.
 - `grainagents market-data` diagnostic command for internal testing.
+- `grainagents analyze` integration with populated immutable market evidence,
+  Parquet history, provider archive, deterministic technical metrics, an active
+  futures curve, stable fact IDs, and a CSV source audit.
+- Current-session protection and captured Databento data-quality warnings.
 
 ### Security
 

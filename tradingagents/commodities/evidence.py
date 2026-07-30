@@ -6,12 +6,33 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from types import MappingProxyType
+from typing import Any
 
 from .contracts import ContractMetadata, resolve_contract
 
 
 def _empty_section() -> Mapping[str, object]:
     return MappingProxyType({})
+
+
+def freeze_evidence_value(value: Any) -> Any:
+    """Recursively freeze JSON-compatible evidence values."""
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {str(key): freeze_evidence_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(freeze_evidence_value(item) for item in value)
+    return value
+
+
+def thaw_evidence_value(value: Any) -> Any:
+    """Return a JSON-serializable copy of a frozen evidence value."""
+    if isinstance(value, Mapping):
+        return {str(key): thaw_evidence_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [thaw_evidence_value(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True)
@@ -24,6 +45,7 @@ class EvidenceQuality:
     )
     stale_sources: tuple[str, ...] = ()
     contradictions: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -31,6 +53,7 @@ class EvidenceQuality:
             "missing_core_data": list(self.missing_core_data),
             "stale_sources": list(self.stale_sources),
             "contradictions": list(self.contradictions),
+            "warnings": list(self.warnings),
         }
 
 
@@ -61,17 +84,17 @@ class EvidencePackage:
             "as_of": self.as_of.isoformat(),
             "instrument": self.instrument.to_dict(),
             "forecast_horizons": list(self.forecast_horizons),
-            "market": dict(self.market),
-            "curve": dict(self.curve),
-            "technical": dict(self.technical),
-            "supply_demand": dict(self.supply_demand),
-            "weather": dict(self.weather),
-            "demand": dict(self.demand),
-            "positioning": dict(self.positioning),
-            "macro": dict(self.macro),
-            "forecast": dict(self.forecast),
-            "facts": list(self.facts),
-            "sources": list(self.sources),
+            "market": thaw_evidence_value(self.market),
+            "curve": thaw_evidence_value(self.curve),
+            "technical": thaw_evidence_value(self.technical),
+            "supply_demand": thaw_evidence_value(self.supply_demand),
+            "weather": thaw_evidence_value(self.weather),
+            "demand": thaw_evidence_value(self.demand),
+            "positioning": thaw_evidence_value(self.positioning),
+            "macro": thaw_evidence_value(self.macro),
+            "forecast": thaw_evidence_value(self.forecast),
+            "facts": thaw_evidence_value(self.facts),
+            "sources": thaw_evidence_value(self.sources),
             "quality": self.quality.to_dict(),
         }
 

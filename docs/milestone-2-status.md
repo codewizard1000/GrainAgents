@@ -12,6 +12,13 @@
 - Preserved event and availability timestamps for point-in-time analysis.
 - Added a non-interactive `grainagents market-data` diagnostic command.
 - Added fixture-backed unit tests that make no billable network requests.
+- Wired exact-contract history into `grainagents analyze`.
+- Added deterministic technical indicators, a five-contract active futures
+  curve, stable fact IDs, and a source audit.
+- Added normalized Parquet and provider-response archives to each run.
+- Added current-session protection so a current-day run uses the latest
+  completed daily session.
+- Captured Databento data-quality warnings in the evidence package.
 
 ## Design decisions
 
@@ -38,17 +45,31 @@ The live checks confirmed exact instrument resolution, daily bars, settlement,
 exchange metadata, and contract expiration metadata. Estimated Databento cost
 for the small verification query was below one cent.
 
+## Technical vertical-slice verification
+
+On 2026-07-30, an authenticated end-to-end `ZCZ26` run produced:
+
+- 310 exact-contract daily observations through 2026-07-29
+- 5 active corn curve points
+- 37 evidence facts
+- a deterministic evidence-linked Markdown report
+- `technical_ready_publication_blocked` status
+
+The run remained non-publishable as designed.
+
 ## Current limitations
 
-- `grainagents analyze` still writes the foundation evidence skeleton; the new
-  provider output is not yet wired into indicators, forecasts, or reports.
 - A current trading day's daily bar may be incomplete before the session and
-  clearing cycle finish.
+  clearing cycle finish, so the pipeline deliberately selects the prior
+  completed weekday.
 - First-notice dates currently come from GrainAgents contract rules rather than
   a separately archived exchange notice-calendar source.
-- Raw Databento responses are not yet archived alongside normalized evidence.
-- No curve construction, seasonal model, probabilistic forecast, or newsletter
-  publication path is complete.
+- The provider archive contains normalized Databento responses rather than the
+  vendor's native DBN byte stream.
+- Databento can take several minutes to serve the complete historical and curve
+  request.
+- No seasonal model, probabilistic forecast, fundamental evidence, or
+  newsletter publication path is complete.
 
 ## Security and licensing
 
@@ -59,6 +80,6 @@ raw market data.
 
 ## Next work
 
-Wire normalized contract history into the immutable evidence package, archive
-raw response metadata, add technical indicators with as-of cutoffs, and build
-the first delivery-contract curve and forecast validation path.
+Add point-in-time WASDE, CFTC COT, export-sales, ethanol, weather, and drought
+adapters, then build transparent statistical forecast baselines and leakage
+tests for the December corn vertical slice.

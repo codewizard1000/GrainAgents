@@ -10,10 +10,17 @@ from typing import Annotated
 
 import typer
 
+from tradingagents.commodities.analysis import build_technical_evidence
+from tradingagents.commodities.artifacts import (
+    write_json,
+    write_market_parquet,
+    write_source_audit,
+)
 from tradingagents.commodities.evidence import (
     build_evidence_package,
     normalize_horizons,
 )
+from tradingagents.commodities.reporting import render_technical_report
 from tradingagents.commodities.tools import (
     get_contract_history as contract_history_tool,
 )
@@ -49,47 +56,6 @@ def _project_version() -> str:
         return version("tradingagents")
     except PackageNotFoundError:
         return "uninstalled"
-
-
-def _technical_foundation_report(evidence: dict) -> str:
-    instrument = evidence["instrument"]
-    missing = ", ".join(evidence["quality"]["missing_core_data"])
-    return f"""# {instrument["symbol"]} contract foundation report
-
-**Status:** Contract metadata validated; contract-aware market data is not configured.
-
-## Instrument
-
-| Field | Value |
-|---|---|
-| Commodity | {instrument["commodity_name"]} |
-| Contract | {instrument["symbol"]} |
-| Exchange | {instrument["exchange"]} |
-| Delivery | {instrument["delivery_month_name"]} {instrument["delivery_year"]} |
-| Crop year | {instrument["crop_year"]} |
-| First notice | {instrument["first_notice_date"]} |
-| Last trade | {instrument["last_trade_date"]} |
-| As of | {evidence["as_of"]} |
-
-## Series identity
-
-This report is anchored to the delivery-specific contract
-`{instrument["symbol"]}`. A `{instrument["root"]}` continuous series may later
-be used only as separately labelled long-horizon context; it cannot substitute
-for this tradable contract in forecasts, scenarios, or newsletter price levels.
-
-## Technical data status
-
-Core inputs are missing: {missing}. GrainAgents therefore does not calculate or
-publish price levels, indicators, directional probabilities, or scenario ranges
-in this foundation run. No values have been estimated or fabricated.
-
-## Next implementation step
-
-Configure a licensed, contract-aware market-data adapter, archive the raw
-response, and populate the point-in-time evidence package before technical
-analysis is allowed to publish.
-"""
 
 
 @app.command("market-data")
@@ -154,7 +120,7 @@ def analyze(
     ),
     analysts: str = typer.Option(
         "technical",
-        help="Milestone 1 supports only the technical analyst",
+        help="The current vertical slice supports only the technical analyst",
     ),
     research_depth: int = typer.Option(
         1,
@@ -163,17 +129,17 @@ def analyze(
     ),
     output: str = typer.Option(
         "newsletter",
-        help="Foundation output format: newsletter, markdown, or json",
+        help="Output selector: newsletter/markdown returns the technical report; json returns evidence",
     ),
     results_dir: Annotated[
         Path,
         typer.Option(help="Root directory for generated artifacts"),
     ] = DEFAULT_RESULTS_DIR,
 ) -> None:
-    """Validate a contract and write an immutable evidence-package skeleton."""
+    """Build exact-contract market evidence and a deterministic technical report."""
     if analysts.strip().lower() != "technical":
         typer.echo(
-            "Error: Milestone 1 commodity runs support only --analysts technical",
+            "Error: the current commodity run supports only --analysts technical",
             err=True,
         )
         raise typer.Exit(code=2)
@@ -184,12 +150,19 @@ def analyze(
         )
         raise typer.Exit(code=2)
 
-    evidence = build_evidence_package(
-        commodity=commodity,
-        contract_symbol=contract,
-        as_of=as_of,
-        forecast_horizons=parse_horizons(horizons),
-    )
+    try:
+        base_evidence = build_evidence_package(
+            commodity=commodity,
+            contract_symbol=contract,
+            as_of=as_of,
+            forecast_horizons=parse_horizons(horizons),
+        )
+        run = build_technical_evidence(base_evidence)
+    except (ValueError, VendorError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    evidence = run.evidence
     payload = evidence.to_dict()
     run_dir = (
         results_dir
@@ -200,20 +173,34 @@ def analyze(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     evidence_path = run_dir / "evidence.json"
-    evidence_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    write_json(evidence_path, payload)
+    market_path = run_dir / "market_data.parquet"
+    write_market_parquet(market_path, run.primary_history)
+    provider_path = run_dir / "market_data_provider.json"
+    write_json(
+        provider_path,
+        {
+            "schema_version": "1.0",
+            "primary_contract": run.primary_history,
+            "curve_contracts": list(run.curve_histories),
+        },
     )
     report_path = run_dir / "technical_report.md"
-    report_path.write_text(_technical_foundation_report(payload), encoding="utf-8")
+    report_path.write_text(render_technical_report(payload), encoding="utf-8")
+    audit_path = run_dir / "source_audit.csv"
+    write_source_audit(audit_path, payload)
 
     manifest = {
         "schema_version": "1.0",
         "run_id": evidence.run_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "code_version": _project_version(),
-        "prompt_version": "commodity-technical-foundation-v1",
-        "data_versions": {},
+        "prompt_version": "deterministic-commodity-technical-v1",
+        "data_versions": {
+            "market_provider": run.primary_history["provider"],
+            "market_dataset": run.primary_history["dataset"],
+            "technical_methodology": payload["technical"]["methodology_version"],
+        },
         "asset_type": "commodity_future",
         "commodity": evidence.instrument.commodity.value,
         "contract": evidence.instrument.symbol,
@@ -221,15 +208,19 @@ def analyze(
         "forecast_horizons": list(evidence.forecast_horizons),
         "analysts": ["technical"],
         "research_depth": research_depth,
-        "status": "blocked_missing_core_market_data",
+        "status": payload["quality"]["status"],
         "human_approval_required": True,
-        "artifacts": ["evidence.json", "technical_report.md"],
+        "publication_ready": False,
+        "artifacts": [
+            "evidence.json",
+            "market_data.parquet",
+            "market_data_provider.json",
+            "technical_report.md",
+            "source_audit.csv",
+        ],
     }
     manifest_path = run_dir / "run_manifest.json"
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_json(manifest_path, manifest)
 
     selected_path = evidence_path if output == "json" else report_path
     typer.echo(str(selected_path.resolve()))

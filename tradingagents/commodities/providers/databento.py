@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import os
+import warnings as python_warnings
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -33,6 +34,7 @@ _CLEARED_VOLUME = 6
 _OPEN_INTEREST = 9
 _STAT_NEW = 1
 _STAT_DELETE = 2
+_SUPPLEMENTAL_LOOKBACK_DAYS = 30
 
 
 class DatabentoNotConfiguredError(VendorNotConfiguredError):
@@ -228,18 +230,24 @@ class DatabentoContractHistoryProvider:
         end_date: date,
     ) -> pd.DataFrame:
         try:
-            store = self._client.timeseries.get_range(
-                dataset=DATABENTO_DATASET,
-                symbols=vendor_symbol,
-                stype_in="raw_symbol",
-                schema=schema,
-                start=start_date.isoformat(),
-                end=(end_date + timedelta(days=1)).isoformat(),
-            )
+            with python_warnings.catch_warnings(record=True) as caught_warnings:
+                python_warnings.simplefilter("always")
+                store = self._client.timeseries.get_range(
+                    dataset=DATABENTO_DATASET,
+                    symbols=vendor_symbol,
+                    stype_in="raw_symbol",
+                    schema=schema,
+                    start=start_date.isoformat(),
+                    end=(end_date + timedelta(days=1)).isoformat(),
+                )
             frame = store.to_df()
         except (BentoClientError, BentoServerError, BentoError) as exc:
             raise _translate_error(exc, symbol=requested_symbol) from exc
-        return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame(frame)
+        result = frame if isinstance(frame, pd.DataFrame) else pd.DataFrame(frame)
+        result.attrs["vendor_warnings"] = tuple(
+            str(item.message) for item in caught_warnings
+        )
+        return result
 
     @staticmethod
     def _latest_statistics(
@@ -333,18 +341,22 @@ class DatabentoContractHistoryProvider:
             start_date=start,
             end_date=end,
         )
+        supplemental_start = max(
+            start,
+            end - timedelta(days=_SUPPLEMENTAL_LOOKBACK_DAYS),
+        )
         statistics = self._get_frame(
             requested_symbol=contract.symbol,
             vendor_symbol=vendor_symbol,
             schema="statistics",
-            start_date=start,
+            start_date=supplemental_start,
             end_date=end,
         )
         definitions = self._get_frame(
             requested_symbol=contract.symbol,
             vendor_symbol=vendor_symbol,
             schema="definition",
-            start_date=start,
+            start_date=supplemental_start,
             end_date=end,
         )
 
@@ -415,7 +427,13 @@ class DatabentoContractHistoryProvider:
                 "Databento returned no daily bars inside the requested date range",
             )
 
-        warnings: list[str] = []
+        warnings: list[str] = list(
+            dict.fromkeys(
+                warning
+                for frame in (ohlcv, statistics, definitions)
+                for warning in frame.attrs.get("vendor_warnings", ())
+            )
+        )
         if any(bar.settlement is None for bar in bars):
             warnings.append(
                 "Some dates lack an official settlement available within the "

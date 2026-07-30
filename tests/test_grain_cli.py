@@ -1,11 +1,67 @@
 import json
+from datetime import date, timedelta
 from unittest import mock
 
+import pandas as pd
 from typer.testing import CliRunner
 
 from cli.grain import app
+from tradingagents.commodities.providers import CONTRACT_HISTORY_PROVIDERS
 
 runner = CliRunner()
+
+
+def _fixture_history(**kwargs):
+    end = date.fromisoformat(kwargs["end_date"])
+    contract = kwargs["contract_symbol"]
+    offset = sum(ord(character) for character in contract) % 25 / 100
+    bars = []
+    for index in range(230):
+        bar_date = end - timedelta(days=229 - index)
+        price = round(4.0 + offset + index * 0.001, 4)
+        available_at = f"{bar_date.isoformat()}T21:00:00+00:00"
+        bars.append(
+            {
+                "date": bar_date.isoformat(),
+                "contract_symbol": contract,
+                "vendor_symbol": f"{contract[:-2]}{contract[-1]}",
+                "open": price - 0.01,
+                "high": price + 0.02,
+                "low": price - 0.02,
+                "close": price,
+                "settlement": price,
+                "volume": 100_000 + index,
+                "bar_volume": 100_000 + index,
+                "cleared_volume": 100_000 + index,
+                "open_interest": 500_000 + index,
+                "bar_ts_event": f"{bar_date.isoformat()}T00:00:00+00:00",
+                "settlement_available_at": available_at,
+                "cleared_volume_available_at": available_at,
+                "open_interest_available_at": available_at,
+            }
+        )
+    return {
+        "schema_version": "1.0",
+        "provider": "databento",
+        "dataset": "GLBX.MDP3",
+        "data_scope": "delivery_specific",
+        "license_scope": "internal_testing_only",
+        "requested_symbol": contract,
+        "vendor_symbol": f"{contract[:-2]}{contract[-1]}",
+        "start_date": kwargs["start_date"],
+        "end_date": kwargs["end_date"],
+        "retrieved_at": "2026-07-30T22:00:00+00:00",
+        "price_unit": "USD_per_bushel",
+        "volume_unit": "contracts",
+        "definition": None,
+        "bars": bars,
+        "source_record_counts": {
+            "ohlcv-1d": len(bars),
+            "statistics": len(bars) * 3,
+            "definition": 1,
+        },
+        "warnings": [],
+    }
 
 
 def test_market_data_command_writes_normalized_json(tmp_path):
@@ -45,38 +101,52 @@ def test_market_data_command_writes_normalized_json(tmp_path):
     )
 
 
-def test_foundation_command_writes_contract_scoped_artifacts(tmp_path):
-    result = runner.invoke(
-        app,
-        [
-            "analyze",
-            "--commodity",
-            "corn",
-            "--contract",
-            "ZCZ26",
-            "--as-of",
-            "2026-07-30",
-            "--horizons",
-            "5,20,60",
-            "--output",
-            "newsletter",
-            "--results-dir",
-            str(tmp_path),
-        ],
-    )
+def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setenv("GRAIN_DATA_PROVIDER", "databento")
+    with mock.patch.dict(
+        CONTRACT_HISTORY_PROVIDERS,
+        {"databento": _fixture_history},
+        clear=False,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--commodity",
+                "corn",
+                "--contract",
+                "ZCZ26",
+                "--as-of",
+                "2026-07-30",
+                "--horizons",
+                "5,20,60",
+                "--output",
+                "newsletter",
+                "--results-dir",
+                str(tmp_path),
+            ],
+        )
 
     assert result.exit_code == 0, result.output
     run_dir = tmp_path / "corn" / "ZCZ26" / "2026-07-30"
     evidence = json.loads((run_dir / "evidence.json").read_text(encoding="utf-8"))
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     report = (run_dir / "technical_report.md").read_text(encoding="utf-8")
+    market_data = pd.read_parquet(run_dir / "market_data.parquet")
 
     assert evidence["instrument"]["symbol"] == "ZCZ26"
+    assert evidence["technical"]["bar_count"] == 230
+    assert evidence["curve"]["status"] == "ready"
+    assert evidence["facts"]
     assert manifest["asset_type"] == "commodity_future"
-    assert manifest["status"] == "blocked_missing_core_market_data"
+    assert manifest["status"] == "technical_ready_publication_blocked"
     assert manifest["human_approval_required"] is True
-    assert "cannot substitute" in report
-    assert "No values have been estimated or fabricated" in report
+    assert manifest["publication_ready"] is False
+    assert len(market_data) == 230
+    assert "does not substitute" in report
+    assert "fact_zcz26_settlement" in report
+    assert (run_dir / "market_data_provider.json").exists()
+    assert (run_dir / "source_audit.csv").exists()
 
 
 def test_foundation_command_rejects_stock_analysts(tmp_path):
@@ -116,4 +186,4 @@ def test_foundation_command_rejects_expired_contract(tmp_path):
         ],
     )
     assert result.exit_code != 0
-    assert "expired" in str(result.exception).lower()
+    assert "expired" in result.output.lower()

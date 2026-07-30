@@ -11,8 +11,9 @@ publication.
 > **Development status:** Milestone 2 market-data foundation. Delivery-specific
 > corn, soybean, and Chicago SRW wheat contracts are typed and validated, and a
 > Databento adapter now retrieves exact-contract daily bars, settlement,
-> volume, open interest, and instrument definitions. Forecasting, curve
-> construction, and publication remain intentionally incomplete.
+> volume, open interest, and instrument definitions. The `analyze` command now
+> builds deterministic technical evidence and a five-contract futures curve.
+> Fundamental data, forecasting, and publication remain intentionally incomplete.
 
 The first functional target is a weekly December corn outlook with point-in-time
 evidence, statistical forecast distributions, bull/base/bear scenarios, source
@@ -31,10 +32,12 @@ grainagents analyze `
   --output newsletter
 ```
 
-It writes a contract-scoped run manifest, evidence JSON, and technical Markdown.
-The `analyze` command still produces the Milestone 1 evidence skeleton and is
-marked `blocked_missing_core_market_data`; it does not yet feed provider results
-into forecasts or publish price levels.
+It writes a contract-scoped run manifest, populated evidence JSON, normalized
+Parquet market history, the normalized provider archive, an evidence-linked
+technical report, and a CSV source audit. For a current-day run, it uses the
+most recent completed daily session rather than an incomplete intraday bar.
+The run remains `publication_ready: false` until fundamental, weather,
+positioning, and forecast evidence is implemented.
 
 For internal testing with Databento, set these values in the ignored `.env`
 file:
@@ -59,6 +62,13 @@ downloading data, rejects ambiguous matches, normalizes CBOT cents per bushel
 to USD per bushel, and records event and availability timestamps. Its output is
 labelled `internal_testing_only`; do not redistribute or publish it without the
 appropriate Databento and exchange data rights.
+
+The technical run calculates 5-, 20-, 50-, 100-, and 200-day moving averages,
+RSI, MACD, stochastic momentum, ATR, Bollinger Bands, observed 20-day
+support/resistance, volume and open-interest changes, and the nearby futures
+curve. Every reported market number has a stable fact ID in `evidence.json` and
+`source_audit.csv`. Databento may take several minutes to serve the complete
+historical and curve request.
 
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)

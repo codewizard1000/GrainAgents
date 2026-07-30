@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Annotated
 
 from langchain_core.tools import tool
 
-from tradingagents.dataflows.config import get_config
-from tradingagents.dataflows.errors import VendorNotConfiguredError
-
 from .contracts import resolve_contract
-from .providers import load_contract_history
+from .providers import load_configured_contract_history
 
 
 @tool
@@ -37,19 +33,7 @@ def get_contract_history(
     history is never substituted at this boundary.
     """
     resolve_contract(contract_symbol, as_of=end_date, reject_expired=False)
-    config = get_config()
-    vendors = config.get("commodity_data_vendors", {})
-    if "GRAIN_DATA_PROVIDER" in os.environ:
-        provider = os.environ["GRAIN_DATA_PROVIDER"].strip()
-    else:
-        provider = str(vendors.get("contract_history", "")).strip()
-    if not provider:
-        raise VendorNotConfiguredError(
-            "No delivery-specific commodity market-data provider is configured "
-            "for get_contract_history"
-        )
-    payload = load_contract_history(
-        provider,
+    payload = load_configured_contract_history(
         contract_symbol=contract_symbol,
         start_date=start_date,
         end_date=end_date,

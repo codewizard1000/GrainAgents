@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from datetime import datetime, timezone
 from unittest import mock
 
@@ -55,6 +56,16 @@ class _FakeDatabentoClient:
     def get_range(self, **kwargs):
         self.requested_vendor_symbol = kwargs["symbols"]
         return _Store(self.frames[kwargs["schema"]])
+
+
+class _WarningDatabentoClient(_FakeDatabentoClient):
+    def get_range(self, **kwargs):
+        warnings.warn(
+            "reduced historical quality in fixture",
+            UserWarning,
+            stacklevel=2,
+        )
+        return super().get_range(**kwargs)
 
 
 def _frames(vendor_symbol: str = "ZCZ6") -> dict[str, pd.DataFrame]:
@@ -162,6 +173,19 @@ def test_databento_normalizes_delivery_contract_history():
     assert latest.settlement == 4.7175
     assert latest.settlement_available_at == "2026-07-29T21:39:07+00:00"
     assert latest.volume == 146501
+
+
+@pytest.mark.unit
+def test_databento_preserves_vendor_quality_warnings():
+    provider = DatabentoContractHistoryProvider(
+        client=_WarningDatabentoClient(_frames())
+    )
+    result = provider.get_contract_history(
+        contract_symbol="ZCZ26",
+        start_date="2026-07-28",
+        end_date="2026-07-29",
+    )
+    assert any("reduced historical quality" in item for item in result.warnings)
 
 
 @pytest.mark.unit
