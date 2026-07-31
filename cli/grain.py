@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date, datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
@@ -23,6 +24,7 @@ from tradingagents.commodities.evidence import (
 )
 from tradingagents.commodities.forecasting import build_quantitative_forecast
 from tradingagents.commodities.official import build_official_evidence
+from tradingagents.commodities.publication import build_publication_bundle
 from tradingagents.commodities.reporting import (
     render_demand_report,
     render_forecast_report,
@@ -139,7 +141,7 @@ def analyze(
     ),
     output: str = typer.Option(
         "newsletter",
-        help="Output selector: newsletter/markdown returns the technical report; json returns evidence",
+        help="Output selector: newsletter returns the publication draft, markdown the technical report, json the evidence",
     ),
     results_dir: Annotated[
         Path,
@@ -188,6 +190,19 @@ def analyze(
 
     evidence = forecast_run.evidence
     payload = evidence.to_dict()
+    publication_bundle = (
+        build_publication_bundle(
+            payload,
+            quantitative=forecast_run.quantitative_forecast,
+            scenarios=forecast_run.scenarios,
+        )
+        if official_run is not None
+        and evidence.instrument.commodity.value == "corn"
+        and evidence.supply_demand.get("status") == "ready"
+        and evidence.demand.get("status") == "ready"
+        and evidence.positioning.get("status") == "ready"
+        else None
+    )
     run_dir = (
         results_dir
         / evidence.instrument.commodity.value
@@ -239,6 +254,43 @@ def analyze(
     )
     scenario_path = run_dir / "scenario_report.json"
     write_json(scenario_path, forecast_run.scenarios)
+    publication_paths: list[Path] = []
+    if publication_bundle is not None:
+        final_outlook_path = run_dir / "final_outlook.json"
+        write_json(final_outlook_path, publication_bundle.final_outlook)
+        publication_status_path = run_dir / "publication_status.json"
+        write_json(
+            publication_status_path,
+            publication_bundle.publication_status,
+        )
+        newsletter_path = run_dir / "newsletter.md"
+        newsletter_path.write_text(
+            publication_bundle.newsletter,
+            encoding="utf-8",
+        )
+        debate_path = run_dir / "bull_bear_debate.md"
+        debate_path.write_text(
+            publication_bundle.bull_bear_debate,
+            encoding="utf-8",
+        )
+        risk_path = run_dir / "risk_report.md"
+        risk_path.write_text(
+            publication_bundle.risk_report,
+            encoding="utf-8",
+        )
+        news_path = run_dir / "news_report.md"
+        news_path.write_text(
+            publication_bundle.news_report,
+            encoding="utf-8",
+        )
+        publication_paths = [
+            final_outlook_path,
+            publication_status_path,
+            newsletter_path,
+            debate_path,
+            risk_path,
+            news_path,
+        ]
     official_archive_paths = write_official_archives(
         run_dir / "official_data",
         official_run.archives if official_run is not None else (),
@@ -280,6 +332,11 @@ def analyze(
         "analysts": ["technical"],
         "research_depth": research_depth,
         "status": payload["quality"]["status"],
+        "publication_status": (
+            publication_bundle.publication_status["status"]
+            if publication_bundle is not None
+            else "not_generated"
+        ),
         "human_approval_required": True,
         "publication_ready": False,
         "artifacts": [
@@ -295,6 +352,7 @@ def analyze(
             "quantitative_forecast.json",
             "forecast_performance.json",
             "scenario_report.json",
+            *[path.name for path in publication_paths],
             "source_audit.csv",
             *[
                 str(Path(path).relative_to(run_dir).as_posix())
@@ -305,8 +363,116 @@ def analyze(
     manifest_path = run_dir / "run_manifest.json"
     write_json(manifest_path, manifest)
 
-    selected_path = evidence_path if output == "json" else report_path
+    if output == "json":
+        selected_path = evidence_path
+    elif output == "newsletter" and publication_bundle is not None:
+        selected_path = run_dir / "newsletter.md"
+    else:
+        selected_path = report_path
     typer.echo(str(selected_path.resolve()))
+
+
+@app.command("approve-publication")
+def approve_publication(
+    run_dir: Annotated[
+        Path,
+        typer.Option(
+            help="Existing run directory containing publication_status.json",
+        ),
+    ],
+    approved_by: Annotated[
+        str,
+        typer.Option(
+            help="Name or identifier of the human editor approving the exact draft",
+        ),
+    ],
+    note: Annotated[
+        str,
+        typer.Option(help="Optional editorial approval note"),
+    ] = "",
+) -> None:
+    """Approve an unblocked newsletter draft without publishing it externally."""
+    status_path = run_dir / "publication_status.json"
+    manifest_path = run_dir / "run_manifest.json"
+    newsletter_path = run_dir / "newsletter.md"
+    required = (status_path, manifest_path, newsletter_path)
+    missing = [path.name for path in required if not path.exists()]
+    if missing:
+        typer.echo(
+            "Error: run directory is missing " + ", ".join(missing),
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    blockers = status.get("blockers", [])
+    if blockers:
+        codes = ", ".join(blocker["code"] for blocker in blockers)
+        typer.echo(
+            f"Error: publication remains blocked: {codes}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    if not approved_by.strip():
+        typer.echo("Error: --approved-by cannot be blank", err=True)
+        raise typer.Exit(code=2)
+
+    approved_at = datetime.now(timezone.utc).isoformat()
+    draft = newsletter_path.read_text(encoding="utf-8")
+    approved_newsletter = draft.replace(
+        "# DRAFT — NOT APPROVED FOR PUBLICATION",
+        "# APPROVED FOR PUBLICATION",
+        1,
+    )
+    approved_path = run_dir / "newsletter_approved.md"
+    approved_path.write_text(approved_newsletter, encoding="utf-8")
+    newsletter_sha256 = hashlib.sha256(
+        approved_newsletter.encode("utf-8")
+    ).hexdigest()
+    approval = {
+        "schema_version": "1.0",
+        "run_id": status["run_id"],
+        "approved_at": approved_at,
+        "approved_by": approved_by.strip(),
+        "note": note.strip(),
+        "approved_artifact": approved_path.name,
+        "approved_artifact_sha256": newsletter_sha256,
+        "external_publication_performed": False,
+    }
+    approval_path = run_dir / "publication_approval.json"
+    write_json(approval_path, approval)
+
+    status.update(
+        {
+            "status": "approved",
+            "publication_ready": True,
+            "human_approval_recorded": True,
+            "approval_artifact": approval_path.name,
+        }
+    )
+    write_json(status_path, status)
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["publication_status"] = "approved"
+    manifest["publication_ready"] = True
+    artifacts = list(manifest.get("artifacts", []))
+    for name in (approved_path.name, approval_path.name):
+        if name not in artifacts:
+            artifacts.append(name)
+    manifest["artifacts"] = artifacts
+    write_json(manifest_path, manifest)
+
+    final_outlook_path = run_dir / "final_outlook.json"
+    if final_outlook_path.exists():
+        final_outlook = json.loads(
+            final_outlook_path.read_text(encoding="utf-8")
+        )
+        final_outlook["status"] = "approved"
+        final_outlook["publication_ready"] = True
+        final_outlook["approval_artifact"] = approval_path.name
+        write_json(final_outlook_path, final_outlook)
+
+    typer.echo(str(approved_path.resolve()))
 
 
 if __name__ == "__main__":

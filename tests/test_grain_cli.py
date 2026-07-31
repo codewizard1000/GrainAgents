@@ -1,12 +1,16 @@
 import json
+from dataclasses import replace
 from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest import mock
 
 import pandas as pd
 from typer.testing import CliRunner
 
 from cli.grain import app
+from tradingagents.commodities.evidence import freeze_evidence_value
 from tradingagents.commodities.providers import CONTRACT_HISTORY_PROVIDERS
+from tradingagents.commodities.publication import PublicationBundle
 
 runner = CliRunner()
 
@@ -182,6 +186,90 @@ def test_foundation_command_rejects_stock_analysts(tmp_path):
     assert "only --analysts technical" in result.output
 
 
+def test_newsletter_output_writes_blocked_publication_bundle(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("GRAIN_DATA_PROVIDER", "databento")
+
+    def official_run(base):
+        evidence = replace(
+            base,
+            supply_demand=freeze_evidence_value({"status": "ready"}),
+            demand=freeze_evidence_value({"status": "ready"}),
+            positioning=freeze_evidence_value({"status": "ready"}),
+        )
+        return SimpleNamespace(evidence=evidence, archives=())
+
+    bundle = PublicationBundle(
+        final_outlook={"status": "blocked"},
+        publication_status={
+            "status": "blocked",
+            "publication_ready": False,
+        },
+        newsletter="# DRAFT — NOT APPROVED FOR PUBLICATION\n",
+        bull_bear_debate="# Bull and bear case — DRAFT\n",
+        risk_report="# Risk review — DRAFT\n",
+        news_report="# Grain news and macro — UNAVAILABLE\n",
+    )
+    with (
+        mock.patch.dict(
+            CONTRACT_HISTORY_PROVIDERS,
+            {"databento": _fixture_history},
+            clear=False,
+        ),
+        mock.patch(
+            "cli.grain.build_official_evidence",
+            side_effect=official_run,
+        ),
+        mock.patch(
+            "cli.grain.build_publication_bundle",
+            return_value=bundle,
+        ),
+        mock.patch(
+            "cli.grain.render_supply_demand_report",
+            return_value="# Supply and demand\n",
+        ),
+        mock.patch(
+            "cli.grain.render_demand_report",
+            return_value="# Demand\n",
+        ),
+        mock.patch(
+            "cli.grain.render_positioning_report",
+            return_value="# Positioning\n",
+        ),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--commodity",
+                "corn",
+                "--contract",
+                "ZCZ26",
+                "--as-of",
+                "2026-07-30",
+                "--output",
+                "newsletter",
+                "--results-dir",
+                str(tmp_path),
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    run_dir = tmp_path / "corn" / "ZCZ26" / "2026-07-30"
+    manifest = json.loads((run_dir / "run_manifest.json").read_text())
+    assert result.output.strip().endswith("newsletter.md")
+    assert manifest["publication_status"] == "blocked"
+    assert manifest["publication_ready"] is False
+    assert "newsletter.md" in manifest["artifacts"]
+    assert (run_dir / "final_outlook.json").exists()
+    assert (run_dir / "publication_status.json").exists()
+    assert (run_dir / "bull_bear_debate.md").exists()
+    assert (run_dir / "risk_report.md").exists()
+    assert (run_dir / "news_report.md").exists()
+
+
 def test_foundation_command_rejects_expired_contract(tmp_path):
     result = runner.invoke(
         app,
@@ -199,3 +287,107 @@ def test_foundation_command_rejects_expired_contract(tmp_path):
     )
     assert result.exit_code != 0
     assert "expired" in result.output.lower()
+
+
+def test_approval_gate_refuses_blocked_publication(tmp_path):
+    (tmp_path / "publication_status.json").write_text(
+        json.dumps(
+            {
+                "run_id": "fixture-run",
+                "status": "blocked",
+                "blockers": [
+                    {
+                        "code": "missing_core_data:weather",
+                        "message": "Weather is incomplete.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "run_manifest.json").write_text(
+        json.dumps({"artifacts": ["newsletter.md"]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "newsletter.md").write_text(
+        "# DRAFT — NOT APPROVED FOR PUBLICATION\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "approve-publication",
+            "--run-dir",
+            str(tmp_path),
+            "--approved-by",
+            "Fixture Editor",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "publication remains blocked" in result.output
+    assert not (tmp_path / "publication_approval.json").exists()
+
+
+def test_approval_gate_records_human_and_exact_artifact_hash(tmp_path):
+    (tmp_path / "publication_status.json").write_text(
+        json.dumps(
+            {
+                "run_id": "fixture-run",
+                "status": "awaiting_human_approval",
+                "publication_ready": False,
+                "human_approval_recorded": False,
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "publication_status": "awaiting_human_approval",
+                "publication_ready": False,
+                "artifacts": ["newsletter.md"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "final_outlook.json").write_text(
+        json.dumps({"status": "draft", "publication_ready": False}),
+        encoding="utf-8",
+    )
+    (tmp_path / "newsletter.md").write_text(
+        "# DRAFT — NOT APPROVED FOR PUBLICATION\n\nExact fixture body.\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "approve-publication",
+            "--run-dir",
+            str(tmp_path),
+            "--approved-by",
+            "Fixture Editor",
+            "--note",
+            "Reviewed",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    approval = json.loads(
+        (tmp_path / "publication_approval.json").read_text()
+    )
+    status = json.loads(
+        (tmp_path / "publication_status.json").read_text()
+    )
+    manifest = json.loads((tmp_path / "run_manifest.json").read_text())
+    approved = (tmp_path / "newsletter_approved.md").read_text()
+    assert approval["approved_by"] == "Fixture Editor"
+    assert approval["external_publication_performed"] is False
+    assert len(approval["approved_artifact_sha256"]) == 64
+    assert approved.startswith("# APPROVED FOR PUBLICATION")
+    assert status["human_approval_recorded"] is True
+    assert manifest["publication_ready"] is True
+    assert "publication_approval.json" in manifest["artifacts"]

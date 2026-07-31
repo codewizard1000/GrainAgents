@@ -18,8 +18,10 @@ publication.
 > exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Weather anomalies,
-> exports, calibrated live forecast scoring, and publication remain
-> intentionally incomplete.
+> exports, calibrated live forecast scoring, and final publication remain
+> intentionally incomplete. The current corn run now produces a deterministic
+> evidence-linked newsletter draft with an explicit blocker and human-approval
+> gate.
 
 The first functional target is a weekly December corn outlook with point-in-time
 evidence, statistical forecast distributions, bull/base/bear scenarios, source
@@ -42,7 +44,8 @@ It writes a contract-scoped run manifest, populated evidence JSON, normalized
 Parquet market history, the normalized provider archive, raw official-source
 archives, evidence-linked technical/supply-demand/positioning/weather/forecast
 reports, quantitative forecast, leak-safe rolling performance, and scenario
-JSON, and a CSV source audit. For a current-day run, it uses the
+JSON, a blocked newsletter/final-outlook/risk bundle, and a CSV source audit.
+For a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
 The run remains `publication_ready: false` until complete weather anomalies,
 export demand, out-of-sample forecast scoring, and editorial approval are
@@ -101,6 +104,20 @@ reduces confidence, while wider calibrated ranges remain visible rather than
 being hidden. The output is labelled research-only until saved forecasts
 accumulate genuine out-of-sample scores.
 
+`--output newsletter` returns `newsletter.md` for a corn run with the current
+official-data prerequisites. The draft is never approved automatically.
+Approval is a separate command and fails while any blocker remains:
+
+```powershell
+grainagents approve-publication `
+  --run-dir results/corn/ZCZ26/2026-07-30 `
+  --approved-by "Editor Name" `
+  --note "Reviewed against source package"
+```
+
+An eligible approval creates a hashed local approval record and approved
+artifact; it does not publish to any external newsletter service.
+
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)
 - [Upstream baseline record](docs/upstream-baseline.md)
@@ -109,6 +126,7 @@ accumulate genuine out-of-sample scores.
 - [Milestone 2 market-data progress](docs/milestone-2-status.md)
 - [Milestone 3 official-data progress](docs/milestone-3-status.md)
 - [Milestone 4 weather/forecast progress](docs/milestone-4-status.md)
+- [Milestone 5 publication progress](docs/milestone-5-status.md)
 
 ## Upstream project documentation
 
