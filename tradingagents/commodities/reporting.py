@@ -583,6 +583,63 @@ def render_forecast_report(evidence: dict[str, Any]) -> str:
         )
         for item in section["forecast_horizons"]
     )
+    live_performance = section.get("live_performance_registry")
+    if live_performance:
+        live_rows = "\n".join(
+            "| {horizon} | {count} | {mae} | {relative} | {direction}% | "
+            "{coverage80}% | {quantile_loss} | {eligible} |".format(
+                horizon=item["horizon_trading_days"],
+                count=item["scored_forecasts"],
+                mae=_number(item["mean_absolute_error"]),
+                relative=_number(item["relative_absolute_error"]),
+                direction=_number(
+                    item["directional_accuracy"] * 100
+                    if item["directional_accuracy"] is not None
+                    else None,
+                    1,
+                ),
+                coverage80=_number(
+                    item["interval_coverage_80"] * 100
+                    if item["interval_coverage_80"] is not None
+                    else None,
+                    1,
+                ),
+                quantile_loss=_number(item["mean_quantile_loss"]),
+                eligible="yes" if item["publication_eligible"] else "no",
+            )
+            for item in live_performance["horizons"]
+        )
+        minimum_scores = live_performance["minimum_scores_per_horizon"]
+        minimum_coverage = (
+            live_performance["eligibility_criteria"][
+                "interval_80_coverage_at_least"
+            ]
+            * 100
+        )
+        live_text = f"""
+
+## Genuine saved-forecast performance
+
+**Status:** `{live_performance["status"]}`
+
+| Horizon | Matured forecasts | MAE | Error vs. random walk | Directional accuracy | 80% coverage | Quantile loss | Eligible |
+|---:|---:|---:|---:|---:|---:|---:|---|
+{live_rows}
+
+Only forecast vintages saved before this run can enter this table. Targets are
+matched to later exact-contract market sessions and scored only after those
+sessions are present in point-in-time history. Publication eligibility requires
+at least {minimum_scores} matured forecasts at every requested horizon, lower
+absolute error than the random-walk forecast, and at least
+{_number(minimum_coverage, 1)}% coverage for the nominal 80% interval.
+"""
+    else:
+        live_text = """
+
+## Genuine saved-forecast performance
+
+No saved-forecast outcome registry was attached to this run.
+"""
     scenarios = section["scenarios"]["probabilities"]
     return f"""# Validated quantitative forecast ensemble
 
@@ -629,6 +686,7 @@ the prior 30 normalized errors, scale them to the prior-origin 60-session
 volatility regime, and adjust their tail probability after each observed hit
 or miss. Nominal 80% coverage below 80% proportionally reduces the displayed
 forecast confidence score.
+{live_text}
 
 These are price-only models evaluated with rolling historical residuals from
 the exact contract. They are research benchmarks, not trading recommendations

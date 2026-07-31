@@ -27,6 +27,13 @@ from tradingagents.commodities.evidence import (
     build_evidence_package,
     normalize_horizons,
 )
+from tradingagents.commodities.forecast_vintages import (
+    attach_live_performance,
+    build_forecast_vintage,
+    load_prior_forecast_vintages,
+    score_saved_forecasts,
+    write_immutable_forecast_vintage,
+)
 from tradingagents.commodities.forecasting import build_quantitative_forecast
 from tradingagents.commodities.official import build_official_evidence
 from tradingagents.commodities.publication import build_publication_bundle
@@ -194,7 +201,6 @@ def analyze(
         raise typer.Exit(code=2) from exc
 
     evidence = forecast_run.evidence
-    payload = evidence.to_dict()
     run_dir = (
         results_dir
         / evidence.instrument.commodity.value
@@ -202,6 +208,33 @@ def analyze(
         / evidence.as_of.date().isoformat()
     )
     run_dir.mkdir(parents=True, exist_ok=True)
+    origin_market_date = str(evidence.market["latest_bar"]["date"])[:10]
+    try:
+        forecast_vintage = build_forecast_vintage(
+            forecast_run.quantitative_forecast,
+            run_id=evidence.run_id,
+            commodity=evidence.instrument.commodity.value,
+            origin_market_date=origin_market_date,
+        )
+        prior_vintages = load_prior_forecast_vintages(
+            results_dir,
+            commodity=evidence.instrument.commodity.value,
+            contract_symbol=evidence.instrument.symbol,
+            before=evidence.as_of,
+        )
+        live_performance = score_saved_forecasts(
+            prior_vintages,
+            history=run.primary_history,
+            as_of=evidence.as_of,
+            requested_horizons=evidence.forecast_horizons,
+            model_version=forecast_run.quantitative_forecast["model_version"],
+        )
+        forecast_run = attach_live_performance(forecast_run, live_performance)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    evidence = forecast_run.evidence
+    payload = evidence.to_dict()
     publication_prerequisites = (
         official_run is not None
         and evidence.instrument.commodity.value == "corn"
@@ -308,6 +341,8 @@ def analyze(
         performance_path,
         forecast_run.quantitative_forecast["performance_registry"],
     )
+    live_performance_path = run_dir / "live_forecast_performance.json"
+    write_json(live_performance_path, live_performance)
     scenario_path = run_dir / "scenario_report.json"
     write_json(scenario_path, forecast_run.scenarios)
     publication_paths: list[Path] = []
@@ -349,6 +384,14 @@ def analyze(
         ]
     audit_path = run_dir / "source_audit.csv"
     write_source_audit(audit_path, payload)
+    try:
+        vintage_path = write_immutable_forecast_vintage(
+            run_dir / "forecast_vintages",
+            forecast_vintage,
+        )
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
 
     manifest = {
         "schema_version": "1.0",
@@ -364,6 +407,9 @@ def analyze(
             "forecast_performance_methodology": payload["forecast"][
                 "performance_registry"
             ]["methodology_version"],
+            "live_forecast_performance_methodology": live_performance[
+                "methodology_version"
+            ],
             "chart_methodology": (
                 charts_manifest["chart_version"]
                 if charts_manifest is not None
@@ -422,6 +468,8 @@ def analyze(
             "forecast_report.md",
             "quantitative_forecast.json",
             "forecast_performance.json",
+            "live_forecast_performance.json",
+            str(vintage_path.relative_to(run_dir).as_posix()),
             "scenario_report.json",
             *chart_paths,
             *([comparison_path.name] if comparison_path is not None else []),

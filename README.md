@@ -163,6 +163,15 @@ reduces confidence, while wider calibrated ranges remain visible rather than
 being hidden. The output is labelled research-only until saved forecasts
 accumulate genuine out-of-sample scores.
 
+Every analysis now saves a content-addressed forecast vintage before its
+outcomes exist and writes a separate live-performance registry. Later runs
+score only the earliest saved forecast from each prior exact-contract market
+session, only after the requested trading-session target has matured, and only
+against market bars available by the new run's point-in-time timestamp. Model
+promotion requires at least 20 genuine scores at every requested horizon,
+lower absolute error than a random-walk forecast, and at least 70% coverage of
+the nominal 80% interval. A model-version change resets the promotion sample.
+
 `--output newsletter` returns `newsletter.md` for a corn run with the current
 official-data prerequisites. The draft is never approved automatically.
 Approval is a separate command and fails while any blocker remains:

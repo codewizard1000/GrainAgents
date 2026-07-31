@@ -35,6 +35,10 @@
 - Added exact-contract discovery of the most recent earlier approved outlook
   and deterministic `prior_report_comparison.json`.
 - Embedded the chart package into the newsletter at the relevant sections.
+- Added `live_forecast_performance.json` plus hash-verified forecast-vintage
+  artifacts. The publication forecast blocker can clear only after genuine
+  saved outcomes satisfy the documented sample, skill, and coverage rules at
+  every requested horizon.
 
 ## Live verification
 
@@ -55,6 +59,11 @@ development facts, rendered a 34.75 condition-based weather-risk index with a
 2.75-point weekly increase, and marked July 31-August 13 as the critical
 monitoring window. The newsletter explicitly says the index is not yield
 calibrated.
+The subsequent live rerun saved the first content-addressed forecast vintage,
+linked it from the run manifest, and wrote the genuine outcome registry. The
+registry correctly showed zero earlier vintages and zero matured outcomes,
+kept the forecast research-only, and excluded the current forecast from its
+own evaluation.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -113,7 +122,7 @@ comparison baseline.
   acreage weighting, historical-replay refusal, pipeline merging, and cited
   weather/newsletter rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 656 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 661 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
@@ -144,4 +153,5 @@ comparison baseline.
 - Apply the published USDA ERS monthly corn-yield equation only after the July
   point-in-time weather panel is complete, or develop and validate a distinct
   weekly model before using seven-day forecasts.
-- Start saving forecast vintages for genuine future-outcome scoring.
+- Accumulate the newly saved daily forecast vintages until the 5-, 20-, and
+  60-session horizons have enough matured outcomes for a publication review.

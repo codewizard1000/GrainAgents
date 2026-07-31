@@ -144,6 +144,10 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert evidence["technical"]["bar_count"] == 230
     assert evidence["curve"]["status"] == "ready"
     assert evidence["facts"]
+    assert evidence["forecast"]["status"] == "ready_research_only"
+    assert evidence["forecast"]["live_performance_registry"][
+        "matured_score_rows"
+    ] == 0
     assert manifest["asset_type"] == "commodity_future"
     assert manifest["status"] == "forecast_baseline_ready_publication_blocked"
     assert manifest["human_approval_required"] is True
@@ -153,6 +157,7 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert "fact_zcz26_settlement" in report
     assert "`regression_tree`" in forecast_report
     assert "zero weight" in forecast_report
+    assert "## Genuine saved-forecast performance" in forecast_report
     assert (run_dir / "market_data_provider.json").exists()
     assert (run_dir / "source_audit.csv").exists()
     assert (run_dir / "supply_demand_report.md").exists()
@@ -162,6 +167,19 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert (run_dir / "forecast_report.md").exists()
     assert (run_dir / "quantitative_forecast.json").exists()
     assert (run_dir / "forecast_performance.json").exists()
+    assert (run_dir / "live_forecast_performance.json").exists()
+    vintage_paths = list((run_dir / "forecast_vintages").glob("forecast_*.json"))
+    assert len(vintage_paths) == 1
+    live_performance = json.loads(
+        (run_dir / "live_forecast_performance.json").read_text(encoding="utf-8")
+    )
+    assert live_performance["status"] == "insufficient_live_scores"
+    assert live_performance["matured_score_rows"] == 0
+    assert live_performance["current_model_prior_vintages"] == 0
+    assert "live_forecast_performance.json" in manifest["artifacts"]
+    assert str(vintage_paths[0].relative_to(run_dir).as_posix()) in manifest[
+        "artifacts"
+    ]
     assert (run_dir / "scenario_report.json").exists()
 
 

@@ -174,6 +174,13 @@ def test_chart_package_writes_pngs_and_auditable_metadata(tmp_path):
     )
     assert seasonal["status"] == "partial"
     assert "multi-year" in seasonal["limitation"]
+    forecast_fan = next(
+        chart
+        for chart in manifest["charts"]
+        if chart["filename"] == "forecast_fan.png"
+    )
+    assert forecast_fan["status"] == "ready_research_only"
+    assert "live scoring criteria" in forecast_fan["limitation"]
 
 
 def _outlook(run_id: str, as_of: str, *, median: float) -> dict:

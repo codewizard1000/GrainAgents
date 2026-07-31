@@ -42,6 +42,15 @@
   origin, model weights and interval residuals use only earlier outcomes.
 - Added under-coverage warnings and proportional confidence penalties when the
   rolling 80% interval achieves less than its nominal coverage.
+- Added content-addressed immutable forecast vintages and a separate genuine
+  out-of-sample score registry. Only earlier saved forecasts can be scored;
+  current and immature forecasts are excluded.
+- Added live MAE, random-walk-relative absolute error, directional accuracy,
+  50% and 80% interval coverage, and mean quantile loss by horizon.
+- Added conservative promotion rules: the earliest saved forecast per origin
+  session prevents rerun double-counting, scores are isolated by model
+  version, and all requested horizons need 20 matured forecasts, skill over
+  random walk, and at least 70% nominal-80% coverage.
 - Replaced fixed pooled-residual intervals with adaptive conformal intervals.
   Each origin uses the prior 30 normalized errors, a 60-session volatility
   scale available at that origin, and a fixed 0.02 adaptation rate.
@@ -88,6 +97,13 @@ The USDA NASS report released July 27 for the week ending July 26 reported:
 The exact report and archive-index HTML were preserved in a 139,965-byte raw
 archive, and 12 stable crop-progress facts were added. The reproductive-stage
 evidence sets July 31-August 13 as the current critical monitoring window.
+
+The July 31 live rerun also wrote the first hash-verified forecast vintage for
+the July 30 exact-contract market origin. As required, the accompanying live
+registry reported zero prior vintages and zero matured score rows, kept the
+forecast `ready_research_only`, and did not score the current run against
+itself. Future runs can score this vintage only after its 5-, 20-, and
+60-session targets mature.
 
 Using the archived 310-observation `ZCZ26` history, the baseline ensemble
 produced deterministic 5-, 20-, and 60-trading-day distributions. The
@@ -145,10 +161,10 @@ where the range is wide or observed coverage is below nominal.
   implement a separately validated weekly model.
 - Forecast models are currently price-only and do not yet ingest the official
   fundamental or weather features.
-- Rolling backtests are now leak-safe and auditable, but they are not a
-  substitute for scoring forecasts saved before outcomes occur. Adaptive
-  conformal calibration is validated only on the available exact-contract
-  history and must be monitored on saved future forecasts.
+- Rolling backtests are now leak-safe and auditable, and saved-forecast scoring
+  is implemented. The newly initialized live registry still has no matured
+  outcomes and must accumulate observations over future exact-contract
+  sessions.
 - The regression tree is deliberately small and price-only. Feature expansion
   should wait for vintage-safe fundamental and weather training panels.
 - EIA's public `DEMO_KEY` can return HTTP 429 after repeated test calls. Set a

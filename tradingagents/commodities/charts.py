@@ -334,14 +334,18 @@ def _forecast_fan(
     return _record(
         filename=filename,
         title=f"{symbol} adaptive-conformal forecast fan",
-        status="ready_research_only",
+        status=quantitative.get("status", "ready_research_only"),
         symbol=symbol,
         as_of=evidence["as_of"],
         unit="USD per bushel",
         sources=[source],
         evidence_refs=refs,
         sha256=digest,
-        limitation="Research-only until saved forecasts are scored out of sample.",
+        limitation=(
+            "Research-only until saved forecasts meet the live scoring criteria."
+            if quantitative.get("status") != "ready_for_publication"
+            else None
+        ),
     )
 
 
