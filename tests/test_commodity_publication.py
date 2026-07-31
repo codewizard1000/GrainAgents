@@ -277,12 +277,27 @@ def test_publication_clears_export_blockers_when_both_feeds_are_ready():
 
 
 @pytest.mark.unit
-def test_publication_renders_macro_and_retains_only_grain_news_blocker():
+def test_publication_renders_macro_events_and_marks_news_coverage_partial():
     evidence = _evidence()
     evidence["macro"] = {
         "status": "ready",
         "coverage_status": "partial",
-        "missing": ["official_grain_news_events"],
+        "missing": ["black_sea_shipping", "china_policy"],
+        "events": {
+            "status": "ready",
+            "coverage_status": "partial",
+            "documents": [
+                {
+                    "document_number": "2026-14772",
+                    "title": "Notice of National Grain Car Council Meeting",
+                    "publication_date": "2026-07-22",
+                    "agencies": ["Surface Transportation Board"],
+                    "categories": ["grain_transportation"],
+                    "html_url": "https://example.test/2026-14772",
+                    "metric": "federal_register_grain_event_2026_14772",
+                }
+            ],
+        },
     }
     macro_facts = [
         _fact(
@@ -305,6 +320,11 @@ def test_publication_renders_macro_and_retains_only_grain_news_blocker():
             "fred_effective_federal_funds_rate_percent",
             3.63,
         ),
+        _fact(
+            "fact_federal_register_grain_event_2026_14772_2026_07_22",
+            "federal_register_grain_event_2026_14772",
+            "Notice of National Grain Car Council Meeting",
+        ),
     ]
     for fact in macro_facts:
         fact["observed_at"] = "2026-07-23"
@@ -321,9 +341,14 @@ def test_publication_renders_macro_and_retains_only_grain_news_blocker():
     }
 
     assert "macro_evidence_unavailable" not in blocker_codes
-    assert "grain_news_not_implemented" in blocker_codes
+    assert "grain_news_not_implemented" not in blocker_codes
+    assert "grain_news_coverage_incomplete" in blocker_codes
     assert "Grain news and macro context — PARTIAL" in bundle.news_report
     assert "120.9075" in bundle.newsletter
+    assert "Notice of National Grain Car Council Meeting" in bundle.news_report
+    assert "[fact_federal_register_grain_event_2026_14772_2026_07_22]" in (
+        bundle.newsletter
+    )
     assert "[fact_fred_wti_crude_oil_usd_per_barrel_2026_07_23]" in (
         bundle.news_report
     )

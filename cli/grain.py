@@ -386,6 +386,7 @@ def analyze(
                     "USDA FAS",
                     "USDA AMS/FGIS",
                     "Federal Reserve Bank of St. Louis",
+                    "Office of the Federal Register / GPO",
                 }
             ],
         },
@@ -394,7 +395,11 @@ def analyze(
         "contract": evidence.instrument.symbol,
         "as_of": evidence.as_of.isoformat(),
         "forecast_horizons": list(evidence.forecast_horizons),
-        "analysts": ["technical", "official_macro_context"],
+        "analysts": [
+            "technical",
+            "official_macro_context",
+            "official_regulatory_events",
+        ],
         "research_depth": research_depth,
         "status": payload["quality"]["status"],
         "publication_status": (

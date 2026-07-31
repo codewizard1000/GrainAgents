@@ -18,6 +18,10 @@
   WTI crude, the 10-year Treasury yield, and the effective federal funds rate.
   The public CSV adapter needs no API key, refuses historical replay, and uses
   a conservative seven-day availability buffer.
+- Added archived Federal Register regulatory events for selected grain
+  transportation, biofuel, ethanol-market-access, fertilizer, and grain-
+  regulation title queries. Each record links to the official GPO PDF and
+  receives a stable fact ID. The feed remains explicitly partial.
 - Added a separate `approve-publication` command. It refuses any run with a
   blocker and never performs external publication. For an unblocked run it
   records the human editor, timestamp, note, and SHA-256 of the exact approved
@@ -37,7 +41,9 @@
 The 2026-07-31 `ZCZ26` run generated a neutral December corn draft with a
 72.1% deterministic base-scenario probability and a calibrated 20-session
 range of $3.934833-$5.400680. The run archived all four FRED CSV series and
-rendered their July 23 observations with stable fact references.
+rendered their July 23 observations with stable fact references. It also
+archived 11 matched Federal Register documents and rendered 11 unique event
+facts without assigning directional market impact.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -45,7 +51,7 @@ Its current blockers are:
 - incomplete weather evidence
 - unverified market-data redistribution rights
 - research-only forecast status
-- unavailable grain-news event evidence
+- incomplete shipping, international-policy, and broader grain-news coverage
 - incomplete multi-year seasonal comparison
 
 The live draft remains `publication_ready: false`.
@@ -89,13 +95,17 @@ comparison baseline.
 - Macro tests verify conservative availability selection, archived public CSV
   payloads, historical-replay refusal, blocker separation, and publication
   citations.
+- Regulatory-event tests verify exact title filtering, next-day availability,
+  historical-replay refusal, pipeline merging, unique event facts, and
+  evidence-linked rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 645 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 647 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
-- The news report contains official macro context, but the grain-news event
-  layer remains an explicit unavailable marker rather than a news analyst.
+- The news report contains official macro context and selected Federal Register
+  regulatory events. Black Sea shipping, river and port disruptions, broader
+  sanctions, China policy, and international crop estimates remain missing.
 - Change-from-prior-report cannot be calculated until an earlier approved
   publication exists.
 - A true multi-year seasonal comparison is not available; the current chart is
@@ -110,6 +120,7 @@ comparison baseline.
 
 ## Next publication slice
 
-- Connect grain-news evidence before making the draft eligible for approval.
+- Add official shipping, river/port, sanctions, China-policy, and international
+  crop-estimate sources to broaden the partial grain-news layer.
 - Complete weather anomalies, 14-day forecasts, and yield-impact evidence.
 - Start saving forecast vintages for genuine future-outcome scoring.

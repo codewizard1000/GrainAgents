@@ -15,8 +15,9 @@ publication.
 > builds deterministic technical evidence, a five-contract futures curve, the
 > current point-in-time USDA WASDE corn balance, CFTC corn positioning, and EIA
 > weekly ethanol demand proxies, USDA FAS weekly corn export sales, USDA
-> AMS/FGIS export inspections, and official FRED macro context. It now adds
-> production-weighted corn drought
+> AMS/FGIS export inspections, official FRED macro context, and tightly
+> filtered Federal Register grain-policy events. It now adds production-
+> weighted corn drought
 > exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Weather anomalies,
@@ -56,6 +57,14 @@ include archived FRED context for the broad U.S. dollar, WTI crude oil, the
 10-year Treasury yield, and the effective federal funds rate. The public CSV
 adapter requires no FRED key, refuses historical replay, and conservatively
 delays every daily observation by seven calendar days.
+
+Current corn runs also archive selected published Federal Register documents
+covering grain transportation, biofuel policy, ethanol market access,
+fertilizer trade, and grain regulation. The adapter requires no API key,
+accepts only exact configured query words in document titles, delays each
+published issue until the following morning, and links every event to its
+official GPO PDF. This is partial regulatory-event coverage, not a complete
+newswire or a directional interpretation of the events.
 
 The corn publication draft includes local PNG charts for exact-contract price
 and moving averages, the futures curve, CFTC positioning, indexed contract

@@ -57,6 +57,10 @@ def _citation(fact: dict[str, Any]) -> str:
     return f"[{fact['fact_id']}]"
 
 
+def _markdown_cell(value: object) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
 def _reference_forecast(
     quantitative: dict[str, Any],
     *,
@@ -131,15 +135,23 @@ def _publication_blockers(
                 "message": "Official currency, energy, and rate context is unavailable.",
             }
         )
-    if (
-        not macro
-        or "official_grain_news_events"
-        in macro.get("missing", ["official_grain_news_events"])
-    ):
+    events = macro.get("events") or {}
+    if events.get("status") != "ready":
         blockers.append(
             {
                 "code": "grain_news_not_implemented",
                 "message": "An official-source grain-news event feed is unavailable.",
+            }
+        )
+    elif events.get("coverage_status") != "complete":
+        blockers.append(
+            {
+                "code": "grain_news_coverage_incomplete",
+                "message": (
+                    "Federal regulatory events are connected, but shipping, "
+                    "international policy, and broader grain-news coverage "
+                    "remain incomplete."
+                ),
             }
         )
     demand = evidence.get("demand") or {}
@@ -498,6 +510,65 @@ and not a trading or hedging recommendation.
   blocker remains.
 """
 
+    macro_section = evidence.get("macro") or {}
+    events_section = macro_section.get("events") or {}
+    event_rows = []
+    recent_event_sentence = ""
+    for document in events_section.get("documents", []):
+        event_fact = _find_optional_fact(evidence, document["metric"])
+        if event_fact is None:
+            continue
+        title = _markdown_cell(document["title"])
+        agencies = _markdown_cell(", ".join(document["agencies"]))
+        categories = _markdown_cell(
+            ", ".join(
+                category.replace("_", " ")
+                for category in document["categories"]
+            )
+        )
+        event_rows.append(
+            f"| {document['publication_date']} | {categories} | "
+            f"[{title}]({document['html_url']}) | {agencies} | "
+            f"{_citation(event_fact)} |"
+        )
+        if not recent_event_sentence:
+            recent_event_sentence = (
+                "The most recent matched Federal Register title is "
+                f"“{document['title']}” {_citation(event_fact)}."
+            )
+    if event_rows:
+        event_report = """## Official regulatory events
+
+| Published | Category | Document | Agencies | Evidence |
+|---|---|---|---|---|
+""" + "\n".join(event_rows)
+        event_newsletter = recent_event_sentence
+    elif events_section.get("status") == "ready":
+        event_report = """## Official regulatory events
+
+No published document title matched the configured grain-policy phrases in
+the current search window.
+"""
+        event_newsletter = (
+            "The official Federal Register event feed is connected, but no "
+            "configured document title matched in its current window."
+        )
+    else:
+        event_report = """## Official regulatory events — UNAVAILABLE
+
+The Federal Register grain-policy event feed is unavailable for this run.
+"""
+        event_newsletter = (
+            "Official Federal Register grain-policy events are unavailable."
+        )
+    event_report += """
+
+This deterministic title filter covers selected trade, biofuel, fertilizer,
+grain-transportation, and grain-regulation releases. It does not yet provide
+complete Black Sea shipping, river and port, sanctions, China-policy, or
+international crop-estimate coverage.
+"""
+
     macro_facts = (
         broad_dollar,
         wti_crude,
@@ -533,20 +604,17 @@ and not a trading or hedging recommendation.
 These observations use FRED's public CSV feeds with a conservative seven-day
 availability buffer. They provide currency, energy, and rate context only.
 
-## Missing event coverage
-
-The official-source grain-news event feed is not implemented. No tariff,
-shipping, policy, sanctions, fertilizer, or China-policy event claim is
-inferred or fabricated. Missing event coverage remains a publication blocker.
+{event_report}
 """
     else:
         macro_newsletter = "Official macro observations are unavailable."
-        news_report = """# Grain news and macro — UNAVAILABLE
+        news_report = f"""# Grain news and macro context — PARTIAL
 
-Official macro observations and the official-source grain-news event feed are
-unavailable. No headlines, sentiment scores, or event claims are inferred or
-fabricated. The missing evidence remains a publication blocker.
+Official macro observations are unavailable.
+
+{event_report}
 """
+    macro_newsletter = f"{macro_newsletter} {event_newsletter}"
 
     blocker_lines = "\n".join(
         f"- `{blocker['code']}`: {blocker['message']}"

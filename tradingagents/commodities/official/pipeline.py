@@ -9,6 +9,7 @@ from typing import Any
 from ..evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 from .cftc import load_corn_cot
 from .eia import load_corn_ethanol
+from .events import load_grain_regulatory_events
 from .fas import load_corn_export_sales
 from .inspections import load_corn_export_inspections
 from .macro import load_grain_macro
@@ -40,6 +41,7 @@ def build_official_evidence(
     inspections_loader: OfficialLoader | None = load_corn_export_inspections,
     weather_loader: OfficialLoader | None = load_corn_weather,
     macro_loader: OfficialLoader | None = load_grain_macro,
+    event_loader: OfficialLoader | None = load_grain_regulatory_events,
 ) -> OfficialEvidenceRun:
     """Add point-in-time-safe official evidence without hiding source failures."""
     if base.instrument.commodity.value != "corn":
@@ -85,6 +87,10 @@ def build_official_evidence(
         )
     if macro_loader is not None:
         loader_calls.append(("FRED macro", macro_loader, {"as_of": base.as_of}))
+    if event_loader is not None:
+        loader_calls.append(
+            ("Federal Register grain events", event_loader, {"as_of": base.as_of})
+        )
     for label, loader, kwargs in loader_calls:
         try:
             snapshots.append(loader(**kwargs))
@@ -96,6 +102,7 @@ def build_official_evidence(
     sources = list(base.sources)
     missing = list(base.quality.missing_core_data)
     demand_components: dict[str, Any] = {}
+    macro_events: dict[str, Any] | None = None
     for snapshot in snapshots:
         if snapshot.section_name == "demand":
             source_id = snapshot.source.get("source_id")
@@ -109,6 +116,8 @@ def build_official_evidence(
                 else str(source_id or "other")
             )
             demand_components[component] = dict(snapshot.section)
+        elif snapshot.section_name == "macro_events":
+            macro_events = dict(snapshot.section)
         else:
             updates[snapshot.section_name] = freeze_evidence_value(snapshot.section)
         if (
@@ -139,6 +148,29 @@ def build_official_evidence(
         )
         if missing_demand and "demand" not in missing:
             missing.append("demand")
+    if macro_events is not None:
+        macro = dict(updates.get("macro") or base.macro)
+        if not macro:
+            macro = {
+                "status": "partial",
+                "coverage_status": "partial",
+                "values": {},
+                "missing": [],
+            }
+        macro["events"] = macro_events
+        macro_missing = list(macro.get("missing", []))
+        if macro_events.get("status") == "ready":
+            macro_missing = [
+                item
+                for item in macro_missing
+                if item != "official_grain_news_events"
+            ]
+        for item in macro_events.get("missing", []):
+            if item not in macro_missing:
+                macro_missing.append(item)
+        macro["missing"] = macro_missing
+        macro["coverage_status"] = "partial"
+        updates["macro"] = freeze_evidence_value(macro)
 
     quality = EvidenceQuality(
         status=base.quality.status,

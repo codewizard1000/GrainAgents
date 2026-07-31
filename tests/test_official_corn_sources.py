@@ -11,6 +11,7 @@ from tradingagents.commodities.official.cftc import (
     parse_corn_cot,
 )
 from tradingagents.commodities.official.eia import load_corn_ethanol
+from tradingagents.commodities.official.events import load_grain_regulatory_events
 from tradingagents.commodities.official.fas import load_corn_export_sales
 from tradingagents.commodities.official.inspections import (
     load_corn_export_inspections,
@@ -216,6 +217,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         inspections_loader=None,
         weather_loader=None,
         macro_loader=None,
+        event_loader=None,
     )
     payload = run.evidence.to_dict()
 
@@ -276,7 +278,26 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
             {"status": "ready", "values": {"weekly_inspections": 275}},
         ),
         weather_loader=None,
-        macro_loader=None,
+        macro_loader=snapshot_loader(
+            "macro",
+            "source_fred_grain_macro",
+            {
+                "status": "ready",
+                "coverage_status": "partial",
+                "values": {"broad_us_dollar_index": 120.5},
+                "missing": ["official_grain_news_events", "china_policy"],
+            },
+        ),
+        event_loader=snapshot_loader(
+            "macro_events",
+            "source_federal_register_grain_events",
+            {
+                "status": "ready",
+                "coverage_status": "partial",
+                "documents": [{"document_number": "2026-14772"}],
+                "missing": ["black_sea_shipping"],
+            },
+        ),
     )
     payload = run.evidence.to_dict()
 
@@ -291,6 +312,11 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
     assert payload["demand"]["missing"] == []
     assert payload["demand"]["status"] == "ready"
     assert "demand" not in payload["quality"]["missing_core_data"]
+    assert payload["macro"]["events"]["documents"][0][
+        "document_number"
+    ] == "2026-14772"
+    assert "official_grain_news_events" not in payload["macro"]["missing"]
+    assert "black_sea_shipping" in payload["macro"]["missing"]
 
 
 @pytest.mark.unit
@@ -467,6 +493,72 @@ def test_fred_macro_refuses_current_csv_for_historical_replay():
             as_of=datetime(2026, 7, 30, 23, tzinfo=UTC),
             today=date(2026, 7, 31),
             session=_MacroSession(),
+        )
+
+
+class _EventResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _EventSession:
+    def get(self, _url: str, **kwargs):
+        query = kwargs["params"]["conditions[term]"]
+        if query != "national grain car council":
+            return _EventResponse({"results": [], "count": 0})
+        documents = []
+        for publication_date, number in (
+            ("2026-07-31", "2026-15555"),
+            ("2026-07-30", "2026-15444"),
+        ):
+            documents.append(
+                {
+                    "document_number": number,
+                    "title": "Notice of National Grain Car Council Meeting",
+                    "publication_date": publication_date,
+                    "type": "Notice",
+                    "agencies": [{"name": "Surface Transportation Board"}],
+                    "html_url": f"https://example.test/documents/{number}",
+                    "pdf_url": f"https://example.test/official/{number}.pdf",
+                    "abstract": None,
+                }
+            )
+        return _EventResponse({"results": documents, "count": 2})
+
+
+@pytest.mark.unit
+def test_regulatory_events_filter_titles_and_delay_current_issue():
+    snapshot = load_grain_regulatory_events(
+        as_of=datetime(2026, 7, 31, 23, tzinfo=UTC),
+        today=date(2026, 7, 31),
+        session=_EventSession(),
+        retrieved_at=datetime(2026, 7, 31, 23, 30, tzinfo=UTC),
+    )
+
+    documents = snapshot.section["documents"]
+    assert snapshot.section["status"] == "ready"
+    assert snapshot.section["coverage_status"] == "partial"
+    assert len(documents) == 1
+    assert documents[0]["document_number"] == "2026-15444"
+    assert documents[0]["categories"] == ["grain_transportation"]
+    assert len(snapshot.observations) == 1
+    assert snapshot.observations[0].source_url.endswith("2026-15444.pdf")
+    assert snapshot.source["api_key_mode"] == "not_required"
+
+
+@pytest.mark.unit
+def test_regulatory_events_refuse_current_search_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not replay-safe"):
+        load_grain_regulatory_events(
+            as_of=datetime(2026, 7, 30, 23, tzinfo=UTC),
+            today=date(2026, 7, 31),
+            session=_EventSession(),
         )
 
 
