@@ -78,7 +78,18 @@ traffic is summed only across Mississippi Locks 27, Ohio Olmsted, and Arkansas
 Lock 1, avoiding double-counting sequential Mississippi locks. The report
 shows weekly tonnage plus weekly, four-week, and annual comparisons. This is a
 flow indicator, not proof of a closure, delay, freight-rate shock, or price
-direction; active lock and port disruption notices remain incomplete.
+direction.
+
+Current corn runs now also archive the USACE Notices to Navigation Interests
+feeds for 14 districts spanning the Mississippi, Illinois, Ohio,
+Tennessee/Cumberland, Arkansas, and Missouri grain corridors. The adapter
+rejects paginated district responses, delays each notice until the morning
+after its issue date, and refuses historical replay of the mutable active-
+notice feeds. Reports show cited active and 14-day upcoming counts plus a
+notice-level table. Closure and restriction labels are deterministic keyword
+classifications; they do not quantify delay, freight cost, affected grain
+volume, congestion, or price direction. Port congestion, rail disruptions,
+and non-USACE marine notices remain incomplete.
 
 The corn publication draft includes local PNG charts for exact-contract price
 and moving averages, the futures curve, CFTC positioning, indexed contract

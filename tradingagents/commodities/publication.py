@@ -144,14 +144,20 @@ def _publication_blockers(
             }
         )
     elif events.get("coverage_status") != "complete":
+        transport_disruptions = macro.get("transport_disruptions") or {}
+        disruption_scope = (
+            "active USACE grain-corridor navigation notices are"
+            if transport_disruptions.get("status") == "ready"
+            else "active transport disruptions are not"
+        )
         blockers.append(
             {
                 "code": "grain_news_coverage_incomplete",
                 "message": (
                     "Federal regulatory events and U.S. river-barge volume are "
-                    "connected, but active transport disruptions, shipping, "
-                    "international policy, and broader grain-news coverage remain "
-                    "incomplete."
+                    f"connected, and {disruption_scope} connected; port "
+                    "congestion, rail service, international shipping and policy, "
+                    "and broader grain-news coverage remain incomplete."
                 ),
             }
         )
@@ -686,6 +692,114 @@ USDA/USACE corn barge movement evidence is unavailable for this run.
         transportation_newsletter = (
             "Official USDA/USACE corn barge movement evidence is unavailable."
         )
+    disruptions_section = macro_section.get("transport_disruptions") or {}
+    active_notice_count = _find_optional_fact(
+        evidence,
+        "usace_grain_corridor_active_notice_count",
+    )
+    active_closure_count = _find_optional_fact(
+        evidence,
+        "usace_grain_corridor_active_closure_count",
+    )
+    active_restriction_count = _find_optional_fact(
+        evidence,
+        "usace_grain_corridor_active_restriction_count",
+    )
+    upcoming_notice_count = _find_optional_fact(
+        evidence,
+        "usace_grain_corridor_upcoming_14_day_notice_count",
+    )
+    disruption_summary_facts = (
+        active_notice_count,
+        active_closure_count,
+        active_restriction_count,
+        upcoming_notice_count,
+    )
+    disruption_rows = []
+    priority_notice_sentence = ""
+    for state, notices in (
+        ("Active", disruptions_section.get("active_notices", [])),
+        ("Upcoming", disruptions_section.get("upcoming_notices", [])),
+    ):
+        for notice in notices:
+            notice_fact = _find_optional_fact(evidence, notice["metric"])
+            if notice_fact is None:
+                continue
+            title = _markdown_cell(notice["title"])
+            waterway = _markdown_cell(notice["waterways"])
+            category = _markdown_cell(notice["category"].replace("_", " "))
+            disruption_rows.append(
+                f"| {state} | {notice['effective_start']} | "
+                f"{notice['district_code']} | {waterway} | {category} | "
+                f"[{title}]({notice['notice_url']}) | {_citation(notice_fact)} |"
+            )
+            if not priority_notice_sentence:
+                priority_notice_sentence = (
+                    f"The highest-priority listed notice is '{notice['title']}' "
+                    f"{_citation(notice_fact)}."
+                )
+            if len(disruption_rows) == 10:
+                break
+        if len(disruption_rows) == 10:
+            break
+    if all(fact is not None for fact in disruption_summary_facts):
+        assert active_notice_count is not None
+        assert active_closure_count is not None
+        assert active_restriction_count is not None
+        assert upcoming_notice_count is not None
+        disruption_table = (
+            "\n".join(disruption_rows)
+            if disruption_rows
+            else "| None | - | - | - | - | No qualifying notices | - |"
+        )
+        disruptions_report = f"""## Active and near-term USACE navigation notices
+
+Across the defined inland grain corridor, the current USACE district feeds list
+{_number(active_notice_count['value'], 0)} active notices
+{_citation(active_notice_count)}. Deterministic keyword classification identifies
+{_number(active_closure_count['value'], 0)} as closure notices
+{_citation(active_closure_count)} and
+{_number(active_restriction_count['value'], 0)} as restriction notices
+{_citation(active_restriction_count)}. Another
+{_number(upcoming_notice_count['value'], 0)} begin within 14 days
+{_citation(upcoming_notice_count)}.
+
+| State | Effective start | District | Waterway | Category | Notice | Evidence |
+|---|---|---|---|---|---|---|
+{disruption_table}
+
+The table is capped at 10 notices and ordered by operational category and
+recency. Keyword categories summarize official notice text; they do not quantify
+delay, freight cost, affected grain volume, or directional price impact.
+"""
+        disruptions_newsletter = (
+            "USACE grain-corridor feeds list "
+            f"{_number(active_notice_count['value'], 0)} active notices "
+            f"{_citation(active_notice_count)}, including "
+            f"{_number(active_closure_count['value'], 0)} closure-classified "
+            f"notices {_citation(active_closure_count)} and "
+            f"{_number(active_restriction_count['value'], 0)} restriction-"
+            f"classified notices {_citation(active_restriction_count)}. "
+            f"{priority_notice_sentence} These classifications do not measure "
+            "shipment delay, freight cost, or price direction."
+        )
+    elif disruptions_section.get("status") == "ready":
+        disruptions_report = """## Active and near-term USACE navigation notices
+
+The USACE notice feed was connected, but its cited summary facts were unavailable.
+"""
+        disruptions_newsletter = (
+            "The USACE navigation-notice feed was connected, but its cited "
+            "summary facts were unavailable."
+        )
+    else:
+        disruptions_report = """## Active and near-term USACE navigation notices - UNAVAILABLE
+
+Official USACE grain-corridor navigation notices are unavailable for this run.
+"""
+        disruptions_newsletter = (
+            "Official USACE grain-corridor navigation notices are unavailable."
+        )
     events_section = macro_section.get("events") or {}
     event_rows = []
     recent_event_sentence = ""
@@ -740,8 +854,9 @@ The Federal Register grain-policy event feed is unavailable for this run.
 
 This deterministic title filter covers selected trade, biofuel, fertilizer,
 grain-transportation, and grain-regulation releases. Weekly U.S. river-barge
-volume is separately connected, but active lock and port disruptions, Black
-Sea shipping, sanctions, China policy, and international crop estimates remain
+volume and active USACE navigation notices are separately connected, but port
+congestion, rail service disruptions, non-USACE marine notices, Black Sea
+shipping, sanctions, China policy, and international crop estimates remain
 incomplete.
 """
 
@@ -783,6 +898,8 @@ availability buffer. They provide currency, energy, and rate context only.
 {event_report}
 
 {transportation_report}
+
+{disruptions_report}
 """
     else:
         macro_newsletter = "Official macro observations are unavailable."
@@ -793,9 +910,12 @@ Official macro observations are unavailable.
 {event_report}
 
 {transportation_report}
+
+{disruptions_report}
 """
     macro_newsletter = (
-        f"{macro_newsletter} {transportation_newsletter} {event_newsletter}"
+        f"{macro_newsletter} {transportation_newsletter} "
+        f"{disruptions_newsletter} {event_newsletter}"
     )
 
     blocker_lines = "\n".join(

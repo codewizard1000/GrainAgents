@@ -24,6 +24,10 @@ from tradingagents.commodities.official.inspections import (
 )
 from tradingagents.commodities.official.macro import load_grain_macro
 from tradingagents.commodities.official.models import OfficialSnapshot
+from tradingagents.commodities.official.navigation import (
+    GRAIN_CORRIDOR_DISTRICTS,
+    load_usace_navigation_notices,
+)
 from tradingagents.commodities.official.pipeline import build_official_evidence
 from tradingagents.commodities.official.transportation import (
     load_corn_barge_movements,
@@ -228,6 +232,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         fas_loader=None,
         inspections_loader=None,
         transportation_loader=None,
+        navigation_loader=None,
         weather_loader=None,
         outlook_loader=None,
         crop_progress_loader=None,
@@ -300,6 +305,16 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
                 "coverage_status": "partial",
                 "values": {"weekly_downbound_barge_tons": 519600},
                 "missing": ["active_lock_closure_notices"],
+            },
+        ),
+        navigation_loader=snapshot_loader(
+            "transport_disruptions",
+            "source_usace_grain_corridor_navigation_notices",
+            {
+                "status": "ready",
+                "coverage_status": "partial",
+                "values": {"active_closure_count": 2},
+                "missing": ["port_congestion", "rail_service_disruptions"],
             },
         ),
         weather_loader=snapshot_loader(
@@ -383,7 +398,12 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
     assert "official_grain_news_events" not in payload["macro"]["missing"]
     assert "black_sea_shipping" in payload["macro"]["missing"]
     assert "river_and_port_disruptions" not in payload["macro"]["missing"]
-    assert "active_lock_closure_notices" in payload["macro"]["missing"]
+    assert "active_lock_closure_notices" not in payload["macro"]["missing"]
+    assert "port_congestion_and_closures" not in payload["macro"]["missing"]
+    assert "port_congestion" in payload["macro"]["missing"]
+    assert payload["macro"]["transport_disruptions"]["values"][
+        "active_closure_count"
+    ] == 2
     assert payload["macro"]["transportation"]["values"][
         "weekly_downbound_barge_tons"
     ] == 519600
@@ -955,6 +975,161 @@ def test_corn_barge_movements_refuse_current_api_for_historical_replay():
             as_of=datetime(2026, 7, 30, 20, tzinfo=UTC),
             today=date(2026, 7, 31),
             session=_TransportationSession(),
+        )
+
+
+class _NavigationResponse:
+    def __init__(self, *, payload: dict | None = None, text: str = ""):
+        self._payload = payload
+        self.text = text
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        assert self._payload is not None
+        return self._payload
+
+
+def _navigation_item(
+    control_number: int,
+    *,
+    issue_date: str,
+    waterways: str = "Upper Mississippi River Pool 13",
+) -> dict:
+    return {
+        "controlnumber": control_number,
+        "noticeno": str(control_number),
+        "issuedate": f"{issue_date}T05:00:00Z",
+        "begindate": None,
+        "waterways": waterways,
+        "noticelink": f"https://example.test/{control_number}",
+    }
+
+
+def _navigation_html(
+    control_number: int,
+    *,
+    issue_date: str,
+    effective: str | None,
+    title: str,
+    policy: bool = False,
+) -> str:
+    month, day, year = issue_date.split("-")[1], issue_date.split("-")[2], issue_date.split("-")[0]
+    effective_cell = (
+        f'<br><b>EFFECTIVE: </b>{effective}' if effective is not None else ""
+    )
+    notice_type = "NAVIGATION POLICY NOTICE" if policy else "NOTICE TO NAVIGATION INTERESTS"
+    return f"""
+    <html><body>
+    <b><font size=+2>{notice_type}</font></b>
+    <table><tr><td><b>DATE: </b></td><td>{month}/{day}/{year}</td></tr>
+    <tr><td><b>NOTICE NUMBER: </b>{control_number}</td>
+    <td><b>WATERWAY: </b>Upper Mississippi River{effective_cell}</td></tr></table>
+    <tr align="CENTER"><td><b><u><font size=+1>{title}<font></u></b></td></tr>
+    <p>Official fixture notice for navigation interests.</p>
+    </body></html>
+    """
+
+
+class _NavigationSession:
+    def __init__(self, *, paginated: bool = False):
+        self.paginated = paginated
+        self.items = [
+            _navigation_item(214800, issue_date="2026-07-29"),
+            _navigation_item(214801, issue_date="2026-07-30"),
+            _navigation_item(214802, issue_date="2026-07-31"),
+            _navigation_item(214594, issue_date="2026-07-02"),
+        ]
+
+    def get(self, url: str, **_kwargs):
+        if "notices_by_district" in url:
+            district = url.rsplit("/", 1)[-1]
+            items = self.items if district == "MVR" else []
+            return _NavigationResponse(
+                payload={
+                    "count": len(items),
+                    "items": items,
+                    "hasMore": self.paginated and district == "MVP",
+                    "links": [],
+                }
+            )
+        control_number = int(url.split("in_nav_notice_number=", 1)[1].split("&", 1)[0])
+        pages = {
+            214800: _navigation_html(
+                214800,
+                issue_date="2026-07-29",
+                effective="07/28/2026 12:00 thru UNTIL FURTHER NOTICE CDT",
+                title="MISSISSIPPI RIVER LOCK CLOSURE",
+            ),
+            214801: _navigation_html(
+                214801,
+                issue_date="2026-07-30",
+                effective="08/03/2026 06:00 thru 08/04/2026 18:00 CDT",
+                title="CHANNEL WIDTH RESTRICTION",
+            ),
+            214802: _navigation_html(
+                214802,
+                issue_date="2026-07-31",
+                effective="07/31/2026 06:00 thru UNTIL FURTHER NOTICE CDT",
+                title="SAME DAY LOCK CLOSURE",
+            ),
+            214594: _navigation_html(
+                214594,
+                issue_date="2026-07-02",
+                effective=None,
+                title="RIVERBANK POLICY",
+                policy=True,
+            ),
+        }
+        return _NavigationResponse(text=pages[control_number])
+
+
+@pytest.mark.unit
+def test_usace_navigation_notices_filter_availability_and_operating_window():
+    snapshot = load_usace_navigation_notices(
+        as_of=datetime(2026, 7, 31, 23, 59, tzinfo=UTC),
+        today=date(2026, 7, 31),
+        session=_NavigationSession(),
+        retrieved_at=datetime(2026, 7, 31, 23, 59, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert len(snapshot.section["districts"]) == len(GRAIN_CORRIDOR_DISTRICTS)
+    assert values == {
+        "active_notice_count": 1,
+        "active_closure_count": 1,
+        "active_restriction_count": 0,
+        "upcoming_14_day_notice_count": 1,
+        "excluded_policy_notice_count": 1,
+    }
+    assert snapshot.section["active_notices"][0]["control_number"] == 214800
+    assert snapshot.section["upcoming_notices"][0]["control_number"] == 214801
+    assert all(
+        observation.vintage != "214802" for observation in snapshot.observations
+    )
+    assert all(
+        observation.available_at
+        <= datetime(2026, 7, 31, 23, 59, tzinfo=UTC)
+        for observation in snapshot.observations
+    )
+    assert len(snapshot.observations) == 7
+    assert b"MISSISSIPPI RIVER LOCK CLOSURE" in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_usace_navigation_notices_reject_pagination_and_historical_replay():
+    with pytest.raises(RuntimeError, match="paginated or incomplete"):
+        load_usace_navigation_notices(
+            as_of=datetime(2026, 7, 31, 23, 59, tzinfo=UTC),
+            today=date(2026, 7, 31),
+            session=_NavigationSession(paginated=True),
+        )
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_usace_navigation_notices(
+            as_of=datetime(2026, 7, 30, 23, 59, tzinfo=UTC),
+            today=date(2026, 7, 31),
+            session=_NavigationSession(),
         )
 
 

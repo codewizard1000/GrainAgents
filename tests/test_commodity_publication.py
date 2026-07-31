@@ -303,6 +303,23 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
             "coverage_status": "partial",
             "values": {"weekly_downbound_barge_tons": 519600},
         },
+        "transport_disruptions": {
+            "status": "ready",
+            "coverage_status": "partial",
+            "active_notices": [
+                {
+                    "control_number": 214800,
+                    "metric": "usace_navigation_notice_214800",
+                    "title": "MISSISSIPPI RIVER LOCK CLOSURE",
+                    "effective_start": "2026-07-28",
+                    "district_code": "MVR",
+                    "waterways": "Upper Mississippi River Pool 13",
+                    "category": "closure",
+                    "notice_url": "https://example.test/notices/214800",
+                }
+            ],
+            "upcoming_notices": [],
+        },
     }
     macro_facts = [
         _fact(
@@ -350,6 +367,31 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
             "ams_corn_year_over_year_change_percent",
             10.718091,
         ),
+        _fact(
+            "fact_usace_grain_corridor_active_notice_count_2026_07_31",
+            "usace_grain_corridor_active_notice_count",
+            120,
+        ),
+        _fact(
+            "fact_usace_grain_corridor_active_closure_count_2026_07_31",
+            "usace_grain_corridor_active_closure_count",
+            31,
+        ),
+        _fact(
+            "fact_usace_grain_corridor_active_restriction_count_2026_07_31",
+            "usace_grain_corridor_active_restriction_count",
+            14,
+        ),
+        _fact(
+            "fact_usace_grain_corridor_upcoming_14_day_notice_count_2026_07_31",
+            "usace_grain_corridor_upcoming_14_day_notice_count",
+            9,
+        ),
+        _fact(
+            "fact_usace_navigation_notice_214800_2026_07_29",
+            "usace_navigation_notice_214800",
+            "MISSISSIPPI RIVER LOCK CLOSURE",
+        ),
     ]
     for fact in macro_facts:
         fact["observed_at"] = "2026-07-23"
@@ -373,6 +415,9 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
     assert "Notice of National Grain Car Council Meeting" in bundle.news_report
     assert "519,600 short tons" in bundle.newsletter
     assert "Official river-barge movement context" in bundle.news_report
+    assert "Active and near-term USACE navigation notices" in bundle.news_report
+    assert "31 closure-classified notices" in bundle.newsletter
+    assert "MISSISSIPPI RIVER LOCK CLOSURE" in bundle.news_report
     assert "Volume alone does not establish" in bundle.newsletter
     assert "[fact_ams_corn_weekly_downbound_barge_tons_2026_07_25]" in (
         bundle.news_report
@@ -381,6 +426,9 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
         bundle.newsletter
     )
     assert "[fact_fred_wti_crude_oil_usd_per_barrel_2026_07_23]" in (
+        bundle.news_report
+    )
+    assert "[fact_usace_navigation_notice_214800_2026_07_29]" in (
         bundle.news_report
     )
 

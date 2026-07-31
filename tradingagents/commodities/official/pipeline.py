@@ -16,6 +16,7 @@ from .fas import load_corn_export_sales
 from .inspections import load_corn_export_inspections
 from .macro import load_grain_macro
 from .models import OfficialDataError, OfficialSnapshot
+from .navigation import load_usace_navigation_notices
 from .transportation import load_corn_barge_movements
 from .wasde import load_corn_wasde
 from .weather import load_corn_weather
@@ -43,6 +44,7 @@ def build_official_evidence(
     fas_loader: OfficialLoader | None = load_corn_export_sales,
     inspections_loader: OfficialLoader | None = load_corn_export_inspections,
     transportation_loader: OfficialLoader | None = load_corn_barge_movements,
+    navigation_loader: OfficialLoader | None = load_usace_navigation_notices,
     weather_loader: OfficialLoader | None = load_corn_weather,
     outlook_loader: OfficialLoader | None = load_corn_8_14_day_outlook,
     crop_progress_loader: OfficialLoader | None = load_corn_crop_progress,
@@ -95,6 +97,14 @@ def build_official_evidence(
                 {"as_of": base.as_of},
             )
         )
+    if navigation_loader is not None:
+        loader_calls.append(
+            (
+                "USACE grain-corridor navigation notices",
+                navigation_loader,
+                {"as_of": base.as_of},
+            )
+        )
     if weather_loader is not None:
         loader_calls.append(
             ("NOAA/USDA weather", weather_loader, {"as_of": base.as_of})
@@ -132,6 +142,7 @@ def build_official_evidence(
     crop_progress: dict[str, Any] | None = None
     macro_events: dict[str, Any] | None = None
     transportation: dict[str, Any] | None = None
+    transport_disruptions: dict[str, Any] | None = None
     for snapshot in snapshots:
         if snapshot.section_name == "demand":
             source_id = snapshot.source.get("source_id")
@@ -153,6 +164,8 @@ def build_official_evidence(
             macro_events = dict(snapshot.section)
         elif snapshot.section_name == "transportation":
             transportation = dict(snapshot.section)
+        elif snapshot.section_name == "transport_disruptions":
+            transport_disruptions = dict(snapshot.section)
         else:
             updates[snapshot.section_name] = freeze_evidence_value(snapshot.section)
         if (
@@ -183,7 +196,11 @@ def build_official_evidence(
         )
         if missing_demand and "demand" not in missing:
             missing.append("demand")
-    if macro_events is not None or transportation is not None:
+    if (
+        macro_events is not None
+        or transportation is not None
+        or transport_disruptions is not None
+    ):
         macro = dict(updates.get("macro") or base.macro)
         if not macro:
             macro = {
@@ -196,6 +213,8 @@ def build_official_evidence(
             macro["events"] = macro_events
         if transportation is not None:
             macro["transportation"] = transportation
+        if transport_disruptions is not None:
+            macro["transport_disruptions"] = transport_disruptions
         macro_missing = list(macro.get("missing", []))
         if macro_events is not None and macro_events.get("status") == "ready":
             macro_missing = [
@@ -203,24 +222,40 @@ def build_official_evidence(
                 for item in macro_missing
                 if item != "official_grain_news_events"
             ]
-        transportation_ready = (
-            transportation is not None
-            and transportation.get("status") == "ready"
+        navigation_ready = (
+            transport_disruptions is not None
+            and transport_disruptions.get("status") == "ready"
         )
-        if transportation_ready:
+        if navigation_ready:
             macro_missing = [
                 item
                 for item in macro_missing
-                if item != "river_and_port_disruptions"
+                if item
+                not in {
+                    "river_and_port_disruptions",
+                    "active_lock_closure_notices",
+                    "river_stage_restrictions",
+                    "port_congestion_and_closures",
+                }
             ]
         if macro_events is not None:
             for item in macro_events.get("missing", []):
-                if item == "river_and_port_disruptions" and transportation_ready:
+                if item == "river_and_port_disruptions" and navigation_ready:
                     continue
                 if item not in macro_missing:
                     macro_missing.append(item)
         if transportation is not None:
             for item in transportation.get("missing", []):
+                if navigation_ready and item in {
+                    "active_lock_closure_notices",
+                    "river_stage_restrictions",
+                    "port_congestion_and_closures",
+                }:
+                    continue
+                if item not in macro_missing:
+                    macro_missing.append(item)
+        if transport_disruptions is not None:
+            for item in transport_disruptions.get("missing", []):
                 if item not in macro_missing:
                     macro_missing.append(item)
         macro["missing"] = macro_missing

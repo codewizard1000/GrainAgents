@@ -30,6 +30,15 @@
   facts to the deterministic news report and newsletter. The copy explicitly
   treats volume as a flow indicator rather than proof of a disruption or
   directional price effect.
+- Added archived USACE Notices to Navigation Interests for 14 districts across
+  the primary Mississippi-system grain corridors. The adapter verifies every
+  district response is complete, uses the signed notice page for its effective
+  period, delays availability until the next morning, and refuses current-feed
+  retrieval for historical replay.
+- Added cited active, closure-classified, restriction-classified, and upcoming
+  14-day notice counts plus a notice-level table capped at 10 rows. The report
+  explicitly says deterministic keyword categories do not measure delay,
+  freight cost, affected grain volume, or price direction.
 - Added bounded FRED retries for timeouts, connection failures, HTTP 429, and
   HTTP 500/502/503/504 responses. Other failures still fail immediately.
 - Added a separate `approve-publication` command. It refuses any run with a
@@ -84,6 +93,14 @@ macro blocker correctly reappeared rather than using stale or substituted
 values. The same rerun found one earlier current-model forecast vintage but
 still had zero matured horizon outcomes, as expected on the same market
 origin.
+The navigation-notice rerun queried all 14 configured USACE grain-corridor
+districts without pagination and archived 523,280 bytes of district JSON and
+official notice HTML. As of July 31, it classified 120 notices as currently
+effective, including 31 closure notices and 14 restriction notices, and found
+9 more beginning within 14 days. Six navigation policy notices without
+operational effective periods were archived but explicitly excluded. The
+archive SHA-256 matched its evidence source record. FRED again exhausted all
+three bounded read-timeout attempts, so the macro blocker remained visible.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -143,20 +160,25 @@ comparison baseline.
 - Transportation tests verify non-overlapping lock aggregation, exact Socrata
   update-time gating, prior-year comparison, historical-replay refusal,
   pipeline merging, archive preservation, and cited publication rendering.
+- Navigation-notice tests verify all-district completeness checks, conservative
+  availability, effective-window filtering, policy-notice exclusion,
+  historical-replay refusal, pipeline gap replacement, and cited rendering.
 - FRED reliability tests verify bounded retry and backoff after a transient
   timeout.
 - CPC tests verify dated KMZ selection, KML polygon classification, intended-
   acreage weighting, historical-replay refusal, pipeline merging, and cited
   weather/newsletter rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 664 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 666 tests, 2 optional skips, 69 subtests, and
+  clean Ruff lint.
 
 ## Current limitations
 
 - The news report contains official macro context, selected Federal Register
-  regulatory events, and weekly U.S. river-barge volume. Active lock closures,
-  river restrictions, port congestion, Black Sea shipping, broader sanctions,
-  China policy, and international crop estimates remain missing.
+  regulatory events, weekly U.S. river-barge volume, and active and near-term
+  USACE navigation notices for defined inland grain corridors. Port congestion,
+  rail disruptions, non-USACE marine notices, Black Sea shipping, broader
+  sanctions, China policy, and international crop estimates remain missing.
 - Change-from-prior-report cannot be calculated until an earlier approved
   publication exists.
 - A true multi-year seasonal comparison is not available; the current chart is
@@ -175,9 +197,9 @@ comparison baseline.
 
 ## Next publication slice
 
-- Add active official lock/river/port notices, Black Sea shipping, sanctions,
-  China-policy, and international crop-estimate sources to broaden the partial
-  grain-news layer.
+- Add official port-congestion, rail-disruption, and non-USACE marine-notice
+  evidence, followed by Black Sea shipping, sanctions, China-policy, and
+  international crop-estimate sources to broaden the partial grain-news layer.
 - Add calibrated weather-risk and yield-impact evidence.
 - Apply the published USDA ERS monthly corn-yield equation only after the July
   point-in-time weather panel is complete, or develop and validate a distinct
