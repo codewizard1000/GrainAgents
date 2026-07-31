@@ -133,6 +133,7 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     evidence = json.loads((run_dir / "evidence.json").read_text(encoding="utf-8"))
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     report = (run_dir / "technical_report.md").read_text(encoding="utf-8")
+    forecast_report = (run_dir / "forecast_report.md").read_text(encoding="utf-8")
     market_data = pd.read_parquet(run_dir / "market_data.parquet")
 
     assert evidence["instrument"]["symbol"] == "ZCZ26"
@@ -146,6 +147,8 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert len(market_data) == 230
     assert "does not substitute" in report
     assert "fact_zcz26_settlement" in report
+    assert "`regression_tree`" in forecast_report
+    assert "zero weight" in forecast_report
     assert (run_dir / "market_data_provider.json").exists()
     assert (run_dir / "source_audit.csv").exists()
     assert (run_dir / "supply_demand_report.md").exists()

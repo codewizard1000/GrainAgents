@@ -16,8 +16,10 @@ publication.
 > current point-in-time USDA WASDE corn balance, CFTC corn positioning, and EIA
 > weekly ethanol demand proxies. It now adds production-weighted corn drought
 > exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
-> transparent forecast ensemble. Weather anomalies, exports, calibrated live
-> forecast scoring, and publication remain intentionally incomplete.
+> forecast ensemble with a regression-tree candidate that is admitted only
+> when it beats every transparent baseline out of sample. Weather anomalies,
+> exports, calibrated live forecast scoring, and publication remain
+> intentionally incomplete.
 
 The first functional target is a weekly December corn outlook with point-in-time
 evidence, statistical forecast distributions, bull/base/bear scenarios, source
@@ -87,10 +89,12 @@ current API is refused for historical as-of runs because it is not a vintage
 database. Use `--no-official-data` only for offline technical testing.
 
 The forecast ensemble combines random-walk, weekly seasonal-naive, drift,
-local-linear-trend, and exponentially weighted price-change baselines. Model
-weights come from rolling historical mean absolute error, while intervals come
-from rolling residual distributions. The output is labelled research-only
-until saved forecasts accumulate genuine out-of-sample scores.
+local-linear-trend, and exponentially weighted price-change baselines with a
+small regression-tree candidate. Model weights come from rolling historical
+mean absolute error, and the tree receives weight only when it strictly beats
+every transparent baseline for that horizon. Intervals come from rolling
+residual distributions. The output is labelled research-only until saved
+forecasts accumulate genuine out-of-sample scores.
 
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)

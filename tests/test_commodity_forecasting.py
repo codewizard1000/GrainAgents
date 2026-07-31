@@ -46,6 +46,17 @@ def test_forecast_ensemble_is_deterministic_and_distribution_constrained():
     for horizon in first.quantitative_forecast["forecast_horizons"]:
         assert horizon["prediction_interval_80"][0] <= horizon["median_projected_price"]
         assert horizon["median_projected_price"] <= horizon["prediction_interval_80"][1]
+        tree = horizon["models"]["regression_tree"]
+        baseline_mae = min(
+            model["rolling_mae"]
+            for name, model in horizon["models"].items()
+            if name != "regression_tree"
+        )
+        assert tree["model_family"] == "regression_tree"
+        assert len(tree["feature_names"]) == 5
+        assert tree["ensemble_eligible"] == (tree["rolling_mae"] < baseline_mae)
+        if not tree["ensemble_eligible"]:
+            assert tree["ensemble_weight"] == 0
         assert sum(
             model["ensemble_weight"]
             for model in horizon["models"].values()

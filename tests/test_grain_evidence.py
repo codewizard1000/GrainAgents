@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from datetime import date
 
 import pytest
 
@@ -47,3 +48,15 @@ def test_horizons_must_be_positive():
             as_of="2026-07-30",
             forecast_horizons=[0, 20],
         )
+
+
+@pytest.mark.unit
+def test_current_date_keeps_the_local_analysis_date():
+    today = date.today()
+    evidence = build_evidence_package(
+        commodity="corn",
+        contract_symbol="ZCZ26",
+        as_of=today.isoformat(),
+    )
+
+    assert evidence.as_of.date() == today

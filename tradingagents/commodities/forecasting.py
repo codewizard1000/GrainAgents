@@ -3,13 +3,33 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from math import sqrt
 from statistics import mean
 from typing import Any
 
 from .evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 
-MODEL_VERSION = "transparent-baseline-ensemble-v1"
+MODEL_VERSION = "validated-baseline-tree-ensemble-v2"
 MINIMUM_TRAINING_BARS = 120
+TREE_MODEL = "regression_tree"
+TREE_FEATURE_NAMES = (
+    "price_change_1",
+    "price_change_5",
+    "price_change_20",
+    "moving_average_gap_20",
+    "realized_volatility_20",
+)
+TREE_MAX_DEPTH = 3
+TREE_MIN_LEAF = 8
+
+
+@dataclass(frozen=True)
+class _TreeNode:
+    prediction: float
+    feature_index: int | None = None
+    threshold: float | None = None
+    left: _TreeNode | None = None
+    right: _TreeNode | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +88,155 @@ def _model_predictions(values: list[float], horizon: int) -> dict[str, float]:
     }
 
 
+def _tree_rows(
+    values: list[float],
+    *,
+    horizon: int,
+) -> list[tuple[tuple[float, ...], float]]:
+    rows = []
+    for index in range(20, len(values) - horizon):
+        recent_changes = [
+            values[position] - values[position - 1]
+            for position in range(index - 19, index + 1)
+        ]
+        average_change = mean(recent_changes)
+        volatility = sqrt(
+            mean((change - average_change) ** 2 for change in recent_changes)
+        )
+        moving_average = mean(values[index - 19 : index + 1])
+        features = (
+            values[index] - values[index - 1],
+            values[index] - values[index - 5],
+            values[index] - values[index - 20],
+            values[index] - moving_average,
+            volatility,
+        )
+        target_change = values[index + horizon] - values[index]
+        rows.append((features, target_change))
+    return rows
+
+
+def _candidate_thresholds(
+    rows: list[tuple[tuple[float, ...], float]],
+    feature_index: int,
+) -> tuple[float, ...]:
+    values = sorted({row[0][feature_index] for row in rows})
+    if len(values) < 2:
+        return ()
+    split_count = min(15, len(values) - 1)
+    indexes = {
+        max(0, min(len(values) - 2, (step * len(values)) // (split_count + 1)))
+        for step in range(1, split_count + 1)
+    }
+    return tuple(
+        (values[index] + values[index + 1]) / 2
+        for index in sorted(indexes)
+    )
+
+
+def _sum_squared_error(values: list[float]) -> float:
+    center = mean(values)
+    return sum((value - center) ** 2 for value in values)
+
+
+def _fit_regression_tree(
+    rows: list[tuple[tuple[float, ...], float]],
+    *,
+    depth: int = 0,
+) -> _TreeNode:
+    prediction = mean(row[1] for row in rows)
+    if depth >= TREE_MAX_DEPTH or len(rows) < TREE_MIN_LEAF * 2:
+        return _TreeNode(prediction=prediction)
+
+    best: tuple[
+        float,
+        int,
+        float,
+        list[tuple[tuple[float, ...], float]],
+        list[tuple[tuple[float, ...], float]],
+    ] | None = None
+    for feature_index in range(len(TREE_FEATURE_NAMES)):
+        for threshold in _candidate_thresholds(rows, feature_index):
+            left = [row for row in rows if row[0][feature_index] <= threshold]
+            right = [row for row in rows if row[0][feature_index] > threshold]
+            if len(left) < TREE_MIN_LEAF or len(right) < TREE_MIN_LEAF:
+                continue
+            loss = _sum_squared_error([row[1] for row in left])
+            loss += _sum_squared_error([row[1] for row in right])
+            candidate = (loss, feature_index, threshold, left, right)
+            if best is None or candidate[:3] < best[:3]:
+                best = candidate
+    if best is None:
+        return _TreeNode(prediction=prediction)
+
+    _, feature_index, threshold, left, right = best
+    return _TreeNode(
+        prediction=prediction,
+        feature_index=feature_index,
+        threshold=threshold,
+        left=_fit_regression_tree(left, depth=depth + 1),
+        right=_fit_regression_tree(right, depth=depth + 1),
+    )
+
+
+def _latest_tree_features(values: list[float]) -> tuple[float, ...]:
+    recent_changes = [
+        values[position] - values[position - 1]
+        for position in range(len(values) - 20, len(values))
+    ]
+    average_change = mean(recent_changes)
+    volatility = sqrt(
+        mean((change - average_change) ** 2 for change in recent_changes)
+    )
+    moving_average = mean(values[-20:])
+    return (
+        values[-1] - values[-2],
+        values[-1] - values[-6],
+        values[-1] - values[-21],
+        values[-1] - moving_average,
+        volatility,
+    )
+
+
+def _predict_tree(node: _TreeNode, features: tuple[float, ...]) -> float:
+    current = node
+    while current.feature_index is not None:
+        branch = (
+            current.left
+            if features[current.feature_index] <= current.threshold
+            else current.right
+        )
+        if branch is None:
+            break
+        current = branch
+    return current.prediction
+
+
+def _tree_prediction(values: list[float], horizon: int) -> tuple[float, _TreeNode]:
+    rows = _tree_rows(values, horizon=horizon)
+    if len(rows) < TREE_MIN_LEAF * 2:
+        raise ValueError("insufficient point-in-time rows for regression tree")
+    tree = _fit_regression_tree(rows)
+    predicted_change = _predict_tree(tree, _latest_tree_features(values))
+    return values[-1] + predicted_change, tree
+
+
+def _ensemble_eligibility(mae: dict[str, float]) -> dict[str, bool]:
+    baseline_errors = [
+        error
+        for model, error in mae.items()
+        if model != TREE_MODEL
+    ]
+    return {
+        model: (
+            True
+            if model != TREE_MODEL
+            else error < min(baseline_errors)
+        )
+        for model, error in mae.items()
+    }
+
+
 def _weighted_quantile(
     values: list[tuple[float, float]],
     quantile: float,
@@ -104,18 +273,24 @@ def _horizon_forecast(
     for origin in range(min_train, len(prices) - horizon):
         train = prices[:origin]
         actual = prices[origin + horizon - 1]
-        for model, prediction in _model_predictions(train, horizon).items():
+        predictions = _model_predictions(train, horizon)
+        tree_prediction, _tree = _tree_prediction(train, horizon)
+        predictions[TREE_MODEL] = tree_prediction
+        for model, prediction in predictions.items():
             residuals.setdefault(model, []).append(actual - prediction)
     if not residuals or any(not values for values in residuals.values()):
         raise ValueError(f"insufficient rolling validation for {horizon}-day forecast")
 
     point_predictions = _model_predictions(prices, horizon)
+    tree_prediction, fitted_tree = _tree_prediction(prices, horizon)
+    point_predictions[TREE_MODEL] = tree_prediction
     mae = {
         model: mean(abs(value) for value in model_residuals)
         for model, model_residuals in residuals.items()
     }
+    eligible = _ensemble_eligibility(mae)
     inverse_mae = {
-        model: 1 / max(value, 1e-8)
+        model: 1 / max(value, 1e-8) if eligible[model] else 0.0
         for model, value in mae.items()
     }
     inverse_total = sum(inverse_mae.values())
@@ -129,6 +304,7 @@ def _horizon_forecast(
             weights[model] / len(model_residuals),
         )
         for model, model_residuals in residuals.items()
+        if weights[model] > 0
         for residual in model_residuals
     ]
     median = _weighted_quantile(distribution, 0.5)
@@ -205,6 +381,31 @@ def _horizon_forecast(
                 "rolling_mae": round(mae[model], 6),
                 "ensemble_weight": round(weights[model], 6),
                 "validation_observations": len(residuals[model]),
+                "model_family": (
+                    "regression_tree"
+                    if model == TREE_MODEL
+                    else "transparent_baseline"
+                ),
+                "ensemble_eligible": eligible[model],
+                "eligibility_rule": (
+                    "rolling MAE must be strictly lower than every transparent baseline"
+                    if model == TREE_MODEL
+                    else "transparent benchmark model"
+                ),
+                **(
+                    {
+                        "feature_names": list(TREE_FEATURE_NAMES),
+                        "maximum_depth": TREE_MAX_DEPTH,
+                        "minimum_leaf_observations": TREE_MIN_LEAF,
+                        "root_split_feature": (
+                            TREE_FEATURE_NAMES[fitted_tree.feature_index]
+                            if fitted_tree.feature_index is not None
+                            else None
+                        ),
+                    }
+                    if model == TREE_MODEL
+                    else {}
+                ),
             }
             for model in point_predictions
         },
@@ -307,8 +508,9 @@ def build_quantitative_forecast(
         "forecast_horizons": forecasts,
         "scenarios": scenarios,
         "limitations": [
-            "Price-only baseline ensemble; official fundamentals and weather are not model features.",
+            "Price-only baseline and regression-tree candidates; official fundamentals and weather are not model features.",
             "Prediction intervals use rolling historical residuals from this exact delivery contract.",
+            "The regression tree receives ensemble weight only when its rolling MAE strictly beats every transparent baseline.",
             "No claim of calibrated live trading performance is made until forecasts are scored out of sample.",
         ],
     }

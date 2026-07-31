@@ -311,8 +311,20 @@ def render_forecast_report(evidence: dict[str, Any]) -> str:
         )
         for item in section["forecast_horizons"]
     )
+    model_rows = "\n".join(
+        "| {horizon} | `{model}` | {family} | {mae} | {weight}% | {eligible} |".format(
+            horizon=item["horizon_trading_days"],
+            model=model_name,
+            family=model["model_family"].replace("_", " "),
+            mae=_number(model["rolling_mae"]),
+            weight=_number(model["ensemble_weight"] * 100, 1),
+            eligible="yes" if model["ensemble_eligible"] else "no",
+        )
+        for item in section["forecast_horizons"]
+        for model_name, model in item["models"].items()
+    )
     scenarios = section["scenarios"]["probabilities"]
-    return f"""# Transparent quantitative forecast baseline
+    return f"""# Validated quantitative forecast ensemble
 
 **Contract:** `{section["contract_symbol"]}`
 
@@ -332,9 +344,20 @@ def render_forecast_report(evidence: dict[str, Any]) -> str:
 | Base | {_number(scenarios["base"] * 100, 1)}% |
 | Bear | {_number(scenarios["bear"] * 100, 1)}% |
 
-These are price-only statistical baselines evaluated with rolling historical
-residuals from the exact contract. They are research benchmarks, not trading
-recommendations or evidence of live predictive skill.
+## Rolling model validation
+
+| Horizon | Model | Family | Rolling MAE | Ensemble weight | Eligible |
+|---:|---|---|---:|---:|---|
+{model_rows}
+
+The regression tree is admitted to the ensemble only when its rolling
+point-in-time MAE is strictly lower than every transparent baseline for that
+horizon. An ineligible tree remains visible with zero weight so a more complex
+model cannot silently degrade the forecast.
+
+These are price-only models evaluated with rolling historical residuals from
+the exact contract. They are research benchmarks, not trading recommendations
+or evidence of live predictive skill.
 """
 
 

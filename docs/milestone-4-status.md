@@ -13,6 +13,11 @@
   deterministic weather report.
 - Added five transparent price baselines: random walk, weekly seasonal naive,
   long-run drift, local linear trend, and exponentially weighted daily change.
+- Added a dependency-free shallow regression-tree candidate using lagged price
+  changes, moving-average distance, and realized volatility.
+- Added a strict complexity gate: the tree receives ensemble weight only when
+  its rolling point-in-time MAE is lower than every transparent baseline for
+  that horizon. Rejected trees remain visible with zero weight.
 - Added rolling horizon-specific validation, inverse-MAE ensemble weights,
   empirical residual prediction intervals, support/resistance probabilities,
   excursion estimates, confidence and disagreement scores.
@@ -37,6 +42,16 @@ produced deterministic 5-, 20-, and 60-trading-day distributions. The
 disagreement than the shorter horizons, as expected from the wider residual
 distribution.
 
+The first regression-tree live evaluation produced:
+
+- 5 days: tree MAE 0.082976 versus best baseline MAE 0.071716; rejected
+- 20 days: tree MAE 0.190172 versus best baseline MAE 0.171574; rejected
+- 60 days: tree MAE 0.201417 versus best baseline MAE 0.223250; admitted with
+  21.4267% ensemble weight
+
+This is evidence that the complexity gate is active rather than an assumption
+that a more complex model must improve every horizon.
+
 ## Current limitations
 
 - The NWS layer samples one disclosed point per state and does not represent
@@ -49,6 +64,8 @@ distribution.
   fundamental or weather features.
 - Rolling backtests estimate historical residual behavior but are not a
   substitute for scoring forecasts saved before outcomes occur.
+- The regression tree is deliberately small and price-only. Feature expansion
+  should wait for vintage-safe fundamental and weather training panels.
 - EIA's public `DEMO_KEY` can return HTTP 429 after repeated test calls. Set a
   free `EIA_API_KEY` for reliable unattended runs.
 - Publication remains blocked and human approval remains mandatory.

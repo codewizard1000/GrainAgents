@@ -106,12 +106,12 @@ def _as_of_datetime(value: str | date | datetime) -> datetime:
         return value
     if isinstance(value, date):
         if value == date.today():
-            return datetime.now(timezone.utc)
+            return datetime.now().astimezone()
         return datetime.combine(value, time(16, 0), tzinfo=timezone.utc)
     if len(value) == 10:
         parsed_date = date.fromisoformat(value)
         if parsed_date == date.today():
-            return datetime.now(timezone.utc)
+            return datetime.now().astimezone()
         return datetime.combine(
             parsed_date,
             time(16, 0),
