@@ -49,6 +49,16 @@ def test_forecast_ensemble_is_deterministic_and_distribution_constrained():
     for horizon in first.quantitative_forecast["forecast_horizons"]:
         assert horizon["prediction_interval_80"][0] <= horizon["median_projected_price"]
         assert horizon["median_projected_price"] <= horizon["prediction_interval_80"][1]
+        assert horizon["prediction_interval_80"][0] <= horizon[
+            "prediction_interval_50"
+        ][0]
+        assert horizon["prediction_interval_50"][1] <= horizon[
+            "prediction_interval_80"
+        ][1]
+        assert (
+            horizon["prediction_interval_method"]
+            == "adaptive-conformal-score-registry-v2"
+        )
         tree = horizon["models"]["regression_tree"]
         baseline_mae = min(
             model["rolling_mae"]
@@ -74,13 +84,19 @@ def test_forecast_ensemble_is_deterministic_and_distribution_constrained():
         assert performance["mean_absolute_scaled_error"] >= 0
         assert 0 <= performance["directional_accuracy"] <= 1
         if performance["interval_evaluation_observations"]:
-            assert 0 <= performance["interval_coverage_50"] <= 1
-            assert 0 <= performance["interval_coverage_80"] <= 1
+            assert performance["interval_coverage_50"] == pytest.approx(
+                0.50,
+                abs=0.05,
+            )
+            assert performance["interval_coverage_80"] == pytest.approx(
+                0.80,
+                abs=0.05,
+            )
             assert performance["mean_quantile_loss"] >= 0
     assert first.scenarios["probability_total"] == 1
     registry = first.quantitative_forecast["performance_registry"]
     assert registry["methodology_version"] == (
-        "expanding-window-score-registry-v1"
+        "adaptive-conformal-score-registry-v2"
     )
     assert len(registry["horizons"]) == 3
     assert any(
@@ -132,6 +148,7 @@ def test_rolling_score_does_not_use_current_outcome_to_select_weights():
                 "regression_tree": 1.0,
             },
             "naive_scale": 1.0,
+            "recent_scale": 1.0,
         }
         for _ in range(30)
     ]
@@ -143,6 +160,7 @@ def test_rolling_score_does_not_use_current_outcome_to_select_weights():
             "regression_tree": 0.0,
         },
         "naive_scale": 1.0,
+        "recent_scale": 1.0,
     }
 
     performance = _rolling_performance([*prior_rows, current_row])

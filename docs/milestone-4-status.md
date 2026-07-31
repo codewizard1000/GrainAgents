@@ -26,6 +26,9 @@
   origin, model weights and interval residuals use only earlier outcomes.
 - Added under-coverage warnings and proportional confidence penalties when the
   rolling 80% interval achieves less than its nominal coverage.
+- Replaced fixed pooled-residual intervals with adaptive conformal intervals.
+  Each origin uses the prior 30 normalized errors, a 60-session volatility
+  scale available at that origin, and a fixed 0.02 adaptation rate.
 - Added deterministic scenarios constrained by the 20-trading-day forecast
   distribution.
 - Added quantitative forecast, scenario, and forecast-report artifacts.
@@ -65,9 +68,19 @@ The leak-safe expanding-window registry reported:
 | 20 days | 140 | 0.219011 | 8.854133 | 39.29% | 51.82% | 0.077188 |
 | 60 days | 100 | 0.300520 | 12.908352 | 35.00% | 52.86% | 0.106467 |
 
-All three nominal 80% intervals under-covered. GrainAgents now records three
-quality warnings and reduced the displayed confidence scores to 56.50, 30.12,
-and 28.31 respectively. These results support keeping publication blocked.
+The original pooled-residual intervals under-covered at all three horizons.
+After adaptive conformal calibration, the same point-in-time evaluation
+reported:
+
+| Horizon | 50% coverage | 80% coverage | Current 80% interval | Confidence |
+|---:|---:|---:|---:|---:|
+| 5 days | 48.80% | 79.20% | $4.501685-$4.929664 | 68.53 |
+| 20 days | 49.09% | 76.36% | $3.949627-$5.466114 | 34.09 |
+| 60 days | 52.86% | 77.14% | $3.385848-$5.810174 | 24.11 |
+
+Calibration is materially closer to the 50% and 80% targets, but the honest
+cost is much wider medium- and long-horizon ranges. Confidence remains low
+where the range is wide or observed coverage is below nominal.
 
 ## Current limitations
 
@@ -80,8 +93,9 @@ and 28.31 respectively. These results support keeping publication blocked.
 - Forecast models are currently price-only and do not yet ingest the official
   fundamental or weather features.
 - Rolling backtests are now leak-safe and auditable, but they are not a
-  substitute for scoring forecasts saved before outcomes occur. The current
-  interval calibration is materially inadequate.
+  substitute for scoring forecasts saved before outcomes occur. Adaptive
+  conformal calibration is validated only on the available exact-contract
+  history and must be monitored on saved future forecasts.
 - The regression tree is deliberately small and price-only. Feature expansion
   should wait for vintage-safe fundamental and weather training panels.
 - EIA's public `DEMO_KEY` can return HTTP 429 after repeated test calls. Set a

@@ -9,10 +9,13 @@ from typing import Any
 
 from .evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 
-MODEL_VERSION = "validated-baseline-tree-ensemble-v2"
-PERFORMANCE_VERSION = "expanding-window-score-registry-v1"
+MODEL_VERSION = "conformal-baseline-tree-ensemble-v3"
+PERFORMANCE_VERSION = "adaptive-conformal-score-registry-v2"
 MINIMUM_TRAINING_BARS = 120
 PERFORMANCE_WARMUP = 30
+CONFORMAL_SCORE_WINDOW = 30
+CONFORMAL_SCALE_WINDOW = 60
+CONFORMAL_GAMMA = 0.02
 TREE_MODEL = "regression_tree"
 TREE_FEATURE_NAMES = (
     "price_change_1",
@@ -282,17 +285,22 @@ def _quantile_loss(actual: float, predicted: float, quantile: float) -> float:
     return max(quantile * error, (quantile - 1) * error)
 
 
+def _clamp_probability(value: float) -> float:
+    return max(0.01, min(0.99, value))
+
+
 def _rolling_performance(
     validation_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     model_errors: dict[str, list[float]] = {}
-    ensemble_residuals: list[float] = []
     absolute_errors: list[float] = []
     scaled_errors: list[float] = []
     direction_matches: list[bool] = []
     coverage_50: list[bool] = []
     coverage_80: list[bool] = []
     quantile_losses: list[float] = []
+    normalized_scores: list[float] = []
+    adaptive_alpha = {0.50: 0.50, 0.80: 0.20}
 
     for index, row in enumerate(validation_rows):
         if index >= PERFORMANCE_WARMUP:
@@ -316,27 +324,62 @@ def _rolling_performance(
                 or (predicted_direction == 0 and actual_direction == 0)
             )
 
-            if len(ensemble_residuals) >= PERFORMANCE_WARMUP:
-                quantiles = {
-                    0.10: point + _quantile(ensemble_residuals, 0.10),
-                    0.25: point + _quantile(ensemble_residuals, 0.25),
-                    0.75: point + _quantile(ensemble_residuals, 0.75),
-                    0.90: point + _quantile(ensemble_residuals, 0.90),
-                }
-                coverage_50.append(
-                    quantiles[0.25] <= row["actual"] <= quantiles[0.75]
-                )
-                coverage_80.append(
-                    quantiles[0.10] <= row["actual"] <= quantiles[0.90]
-                )
-                quantile_losses.extend(
-                    _quantile_loss(row["actual"], prediction, quantile)
-                    for quantile, prediction in quantiles.items()
-                )
-            ensemble_residuals.append(error)
+            if len(normalized_scores) >= PERFORMANCE_WARMUP:
+                score_window = normalized_scores[-CONFORMAL_SCORE_WINDOW:]
+                for target, coverage in (
+                    (0.50, coverage_50),
+                    (0.80, coverage_80),
+                ):
+                    multiplier = _quantile(
+                        score_window,
+                        _clamp_probability(1 - adaptive_alpha[target]),
+                    )
+                    half_width = multiplier * row["recent_scale"]
+                    lower = point - half_width
+                    upper = point + half_width
+                    hit = lower <= row["actual"] <= upper
+                    coverage.append(hit)
+                    lower_quantile = (1 - target) / 2
+                    upper_quantile = 1 - lower_quantile
+                    quantile_losses.extend(
+                        (
+                            _quantile_loss(
+                                row["actual"],
+                                lower,
+                                lower_quantile,
+                            ),
+                            _quantile_loss(
+                                row["actual"],
+                                upper,
+                                upper_quantile,
+                            ),
+                        )
+                    )
+                    miss = 0 if hit else 1
+                    adaptive_alpha[target] = _clamp_probability(
+                        adaptive_alpha[target]
+                        + CONFORMAL_GAMMA * ((1 - target) - miss)
+                    )
+            normalized_scores.append(
+                abs(error) / max(row["recent_scale"], 1e-8)
+            )
 
         for model, prediction in row["predictions"].items():
             model_errors.setdefault(model, []).append(row["actual"] - prediction)
+
+    next_multipliers = {}
+    if len(normalized_scores) >= PERFORMANCE_WARMUP:
+        score_window = normalized_scores[-CONFORMAL_SCORE_WINDOW:]
+        next_multipliers = {
+            str(round(target * 100)): round(
+                _quantile(
+                    score_window,
+                    _clamp_probability(1 - adaptive_alpha[target]),
+                ),
+                6,
+            )
+            for target in adaptive_alpha
+        }
 
     return {
         "methodology_version": PERFORMANCE_VERSION,
@@ -345,9 +388,18 @@ def _rolling_performance(
             "use only model errors observed before that origin."
         ),
         "interval_policy": (
-            "At each interval-scored origin, quantiles use only earlier "
-            "point-in-time ensemble residuals."
+            "Adaptive conformal symmetric intervals use only the prior 30 "
+            "ensemble errors normalized by the prior-origin 60-session "
+            "volatility scale."
         ),
+        "conformal_gamma": CONFORMAL_GAMMA,
+        "conformal_score_window": CONFORMAL_SCORE_WINDOW,
+        "conformal_scale_window": CONFORMAL_SCALE_WINDOW,
+        "next_interval_scale_multipliers": next_multipliers,
+        "next_adaptive_alpha": {
+            str(round(target * 100)): round(alpha, 6)
+            for target, alpha in adaptive_alpha.items()
+        },
         "warmup_observations": PERFORMANCE_WARMUP,
         "evaluation_observations": len(absolute_errors),
         "interval_evaluation_observations": len(coverage_80),
@@ -415,6 +467,13 @@ def _horizon_forecast(
                     abs(train[index] - train[index - 1])
                     for index in range(1, len(train))
                 ),
+                "recent_scale": mean(
+                    abs(train[index] - train[index - 1])
+                    for index in range(
+                        max(1, len(train) - CONFORMAL_SCALE_WINDOW),
+                        len(train),
+                    )
+                ),
             }
         )
     if not residuals or any(not values for values in residuals.values()):
@@ -447,6 +506,35 @@ def _horizon_forecast(
         _weighted_quantile(distribution, 0.90),
     ]
     current = prices[-1]
+    rolling_performance = _rolling_performance(validation_rows)
+    multipliers = rolling_performance["next_interval_scale_multipliers"]
+    interval_method = "pooled_model_residual_fallback"
+    if {"50", "80"} <= set(multipliers):
+        current_scale = mean(
+            abs(prices[index] - prices[index - 1])
+            for index in range(
+                max(1, len(prices) - CONFORMAL_SCALE_WINDOW),
+                len(prices),
+            )
+        )
+        median = sum(
+            point_predictions[model] * weight
+            for model, weight in weights.items()
+        )
+        half_width_50 = multipliers["50"] * current_scale
+        half_width_80 = max(
+            half_width_50,
+            multipliers["80"] * current_scale,
+        )
+        interval_50 = [
+            median - half_width_50,
+            median + half_width_50,
+        ]
+        interval_80 = [
+            median - half_width_80,
+            median + half_width_80,
+        ]
+        interval_method = PERFORMANCE_VERSION
     future_paths = [
         prices[origin + 1 : origin + horizon + 1]
         for origin in range(0, len(prices) - horizon)
@@ -477,7 +565,6 @@ def _horizon_forecast(
             - min(interval_width_percent, 50) * 0.6,
         ),
     )
-    rolling_performance = _rolling_performance(validation_rows)
     observed_coverage_80 = rolling_performance["interval_coverage_80"]
     if observed_coverage_80 is not None:
         confidence *= min(1.0, observed_coverage_80 / 0.80)
@@ -487,6 +574,7 @@ def _horizon_forecast(
         "median_projected_price": round(median, 6),
         "prediction_interval_50": [round(value, 6) for value in interval_50],
         "prediction_interval_80": [round(value, 6) for value in interval_80],
+        "prediction_interval_method": interval_method,
         "probability_above_resistance": (
             round(
                 _probability(distribution, lambda value: value > resistance),
@@ -657,7 +745,7 @@ def build_quantitative_forecast(
         "scenarios": scenarios,
         "limitations": [
             "Price-only baseline and regression-tree candidates; official fundamentals and weather are not model features.",
-            "Prediction intervals use rolling historical residuals from this exact delivery contract.",
+            "Prediction intervals use adaptive conformal calibration from point-in-time errors on this exact delivery contract.",
             "The regression tree receives ensemble weight only when its rolling MAE strictly beats every transparent baseline.",
             "No claim of calibrated live trading performance is made until forecasts are scored out of sample.",
         ],

@@ -95,9 +95,11 @@ mean absolute error, and the tree receives weight only when it strictly beats
 every transparent baseline for that horizon. Intervals come from rolling
 residual distributions. An expanding-window registry reports MAE, MASE,
 directional accuracy, interval coverage, and quantile loss without using a
-forecast origin's outcome to score itself. Under-coverage reduces forecast
-confidence and raises a quality warning. The output is labelled research-only
-until saved forecasts accumulate genuine out-of-sample scores.
+forecast origin's outcome to score itself. Adaptive conformal intervals use
+recent normalized errors to respond to changing volatility; under-coverage
+reduces confidence, while wider calibrated ranges remain visible rather than
+being hidden. The output is labelled research-only until saved forecasts
+accumulate genuine out-of-sample scores.
 
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)

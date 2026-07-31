@@ -395,6 +395,8 @@ def render_forecast_report(evidence: dict[str, Any]) -> str:
 
 **Model version:** `{section["model_version"]}`
 
+**Interval method:** `{section["forecast_horizons"][0]["prediction_interval_method"]}`
+
 | Trading days | Median USD/bu | 50% interval | 80% interval | Confidence | Disagreement |
 |---:|---:|---:|---:|---:|---:|
 {rows}
@@ -425,9 +427,11 @@ model cannot silently degrade the forecast.
 {performance_rows}
 
 Each scored forecast uses only model errors already observable at that origin
-to select weights and tree eligibility. Interval coverage and quantile loss
-also use only residuals from earlier scored origins. Nominal 80% coverage below
-80% proportionally reduces the displayed forecast confidence score.
+to select weights and tree eligibility. Adaptive conformal intervals use only
+the prior 30 normalized errors, scale them to the prior-origin 60-session
+volatility regime, and adjust their tail probability after each observed hit
+or miss. Nominal 80% coverage below 80% proportionally reduces the displayed
+forecast confidence score.
 
 These are price-only models evaluated with rolling historical residuals from
 the exact contract. They are research benchmarks, not trading recommendations
