@@ -9,6 +9,7 @@ from typing import Any
 from ..evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 from .cftc import load_corn_cot
 from .cpc import load_corn_8_14_day_outlook
+from .crop_progress import load_corn_crop_progress
 from .eia import load_corn_ethanol
 from .events import load_grain_regulatory_events
 from .fas import load_corn_export_sales
@@ -42,6 +43,7 @@ def build_official_evidence(
     inspections_loader: OfficialLoader | None = load_corn_export_inspections,
     weather_loader: OfficialLoader | None = load_corn_weather,
     outlook_loader: OfficialLoader | None = load_corn_8_14_day_outlook,
+    crop_progress_loader: OfficialLoader | None = load_corn_crop_progress,
     macro_loader: OfficialLoader | None = load_grain_macro,
     event_loader: OfficialLoader | None = load_grain_regulatory_events,
 ) -> OfficialEvidenceRun:
@@ -91,6 +93,14 @@ def build_official_evidence(
         loader_calls.append(
             ("NOAA CPC 8-14 day", outlook_loader, {"as_of": base.as_of})
         )
+    if crop_progress_loader is not None:
+        loader_calls.append(
+            (
+                "USDA NASS Crop Progress",
+                crop_progress_loader,
+                {"as_of": base.as_of},
+            )
+        )
     if macro_loader is not None:
         loader_calls.append(("FRED macro", macro_loader, {"as_of": base.as_of}))
     if event_loader is not None:
@@ -109,6 +119,7 @@ def build_official_evidence(
     missing = list(base.quality.missing_core_data)
     demand_components: dict[str, Any] = {}
     weather_outlook: dict[str, Any] | None = None
+    crop_progress: dict[str, Any] | None = None
     macro_events: dict[str, Any] | None = None
     for snapshot in snapshots:
         if snapshot.section_name == "demand":
@@ -125,6 +136,8 @@ def build_official_evidence(
             demand_components[component] = dict(snapshot.section)
         elif snapshot.section_name == "weather_outlook":
             weather_outlook = dict(snapshot.section)
+        elif snapshot.section_name == "crop_progress":
+            crop_progress = dict(snapshot.section)
         elif snapshot.section_name == "macro_events":
             macro_events = dict(snapshot.section)
         else:
@@ -180,7 +193,7 @@ def build_official_evidence(
         macro["missing"] = macro_missing
         macro["coverage_status"] = "partial"
         updates["macro"] = freeze_evidence_value(macro)
-    if weather_outlook is not None:
+    if weather_outlook is not None or crop_progress is not None:
         weather = dict(updates.get("weather") or base.weather)
         if not weather:
             weather = {
@@ -189,14 +202,46 @@ def build_official_evidence(
                 "values": {},
                 "missing": [],
             }
-        weather["outlook_8_14_day"] = weather_outlook
         weather_missing = list(weather.get("missing", []))
-        if weather_outlook.get("status") == "ready":
+        if weather_outlook is not None:
+            weather["outlook_8_14_day"] = weather_outlook
+        if weather_outlook is not None and weather_outlook.get("status") == "ready":
             weather_missing = [
                 item
                 for item in weather_missing
                 if item != "14_day_forecast"
             ]
+        if crop_progress is not None:
+            weather["crop_progress"] = crop_progress
+        if crop_progress is not None and crop_progress.get("status") == "ready":
+            weather_missing = [
+                item
+                for item in weather_missing
+                if item
+                not in {
+                    "crop_condition_ratings",
+                    "condition_based_weather_risk_score",
+                    "critical_forecast_dates",
+                }
+            ]
+            values = weather.get("values", {})
+            crop_values = crop_progress.get("values", {})
+            critical_start = values.get("seven_day_forecast_valid_start")
+            critical_end = (
+                weather_outlook.get("valid_end")
+                if weather_outlook is not None
+                else values.get("seven_day_forecast_valid_end")
+            )
+            if critical_start and critical_end:
+                weather["critical_forecast_dates"] = {
+                    "start": critical_start,
+                    "end": critical_end,
+                    "basis": (
+                        f"{crop_values.get('silking_percent')}% silking and "
+                        f"{crop_values.get('dough_percent')}% dough as of "
+                        f"{crop_values.get('week_ending')}"
+                    ),
+                }
         weather["missing"] = weather_missing
         weather["status"] = "ready" if not weather_missing else "partial"
         updates["weather"] = freeze_evidence_value(weather)

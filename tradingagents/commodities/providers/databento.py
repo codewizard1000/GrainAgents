@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import math
 import os
+import time
 import warnings as python_warnings
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -35,6 +37,8 @@ _OPEN_INTEREST = 9
 _STAT_NEW = 1
 _STAT_DELETE = 2
 _SUPPLEMENTAL_LOOKBACK_DAYS = 30
+_TRANSIENT_HTTP_STATUS = {500, 502, 503, 504}
+_MAX_REQUEST_ATTEMPTS = 3
 
 
 class DatabentoNotConfiguredError(VendorNotConfiguredError):
@@ -173,6 +177,7 @@ class DatabentoContractHistoryProvider:
         *,
         client: Any | None = None,
         now: Any | None = None,
+        sleep: Callable[[float], None] | None = None,
     ) -> None:
         key = (api_key or os.environ.get("DATABENTO_API_KEY", "")).strip()
         if client is None and not key:
@@ -181,6 +186,28 @@ class DatabentoContractHistoryProvider:
             )
         self._client = client or db.Historical(key)
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._sleep = sleep or time.sleep
+
+    def _request_with_retry(
+        self,
+        operation: Callable[[], Any],
+        *,
+        requested_symbol: str,
+    ) -> Any:
+        for attempt in range(_MAX_REQUEST_ATTEMPTS):
+            try:
+                return operation()
+            except BentoServerError as exc:
+                status = getattr(exc, "http_status", None)
+                if (
+                    status not in _TRANSIENT_HTTP_STATUS
+                    or attempt == _MAX_REQUEST_ATTEMPTS - 1
+                ):
+                    raise _translate_error(exc, symbol=requested_symbol) from exc
+                self._sleep(2**attempt)
+            except (BentoClientError, BentoError) as exc:
+                raise _translate_error(exc, symbol=requested_symbol) from exc
+        raise AssertionError("Databento retry loop exhausted without a result")
 
     def _resolve_instrument_ids(
         self,
@@ -190,17 +217,17 @@ class DatabentoContractHistoryProvider:
         start_date: date,
         end_date: date,
     ) -> tuple[int, ...]:
-        try:
-            payload = self._client.symbology.resolve(
+        payload = self._request_with_retry(
+            lambda: self._client.symbology.resolve(
                 dataset=DATABENTO_DATASET,
                 symbols=vendor_symbol,
                 stype_in="raw_symbol",
                 stype_out="instrument_id",
                 start_date=start_date.isoformat(),
                 end_date=(end_date + timedelta(days=1)).isoformat(),
-            )
-        except (BentoClientError, BentoServerError, BentoError) as exc:
-            raise _translate_error(exc, symbol=requested_symbol) from exc
+            ),
+            requested_symbol=requested_symbol,
+        )
 
         mappings = payload.get("result", {}).get(vendor_symbol, [])
         instrument_ids = tuple(
@@ -229,20 +256,20 @@ class DatabentoContractHistoryProvider:
         start_date: date,
         end_date: date,
     ) -> pd.DataFrame:
-        try:
-            with python_warnings.catch_warnings(record=True) as caught_warnings:
-                python_warnings.simplefilter("always")
-                store = self._client.timeseries.get_range(
+        with python_warnings.catch_warnings(record=True) as caught_warnings:
+            python_warnings.simplefilter("always")
+            store = self._request_with_retry(
+                lambda: self._client.timeseries.get_range(
                     dataset=DATABENTO_DATASET,
                     symbols=vendor_symbol,
                     stype_in="raw_symbol",
                     schema=schema,
                     start=start_date.isoformat(),
                     end=(end_date + timedelta(days=1)).isoformat(),
-                )
-            frame = store.to_df()
-        except (BentoClientError, BentoServerError, BentoError) as exc:
-            raise _translate_error(exc, symbol=requested_symbol) from exc
+                ),
+                requested_symbol=requested_symbol,
+            )
+        frame = store.to_df()
         result = frame if isinstance(frame, pd.DataFrame) else pd.DataFrame(frame)
         result.attrs["vendor_warnings"] = tuple(
             str(item.message) for item in caught_warnings

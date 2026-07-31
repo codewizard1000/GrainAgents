@@ -13,6 +13,9 @@ from tradingagents.commodities.official.cftc import (
     parse_corn_cot,
 )
 from tradingagents.commodities.official.cpc import load_corn_8_14_day_outlook
+from tradingagents.commodities.official.crop_progress import (
+    load_corn_crop_progress,
+)
 from tradingagents.commodities.official.eia import load_corn_ethanol
 from tradingagents.commodities.official.events import load_grain_regulatory_events
 from tradingagents.commodities.official.fas import load_corn_export_sales
@@ -223,6 +226,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         inspections_loader=None,
         weather_loader=None,
         outlook_loader=None,
+        crop_progress_loader=None,
         macro_loader=None,
         event_loader=None,
     )
@@ -289,8 +293,18 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
             "source_noaa_usda_corn_weather",
             {
                 "status": "partial",
-                "values": {"d1_or_worse_percent": 20},
-                "missing": ["14_day_forecast", "yield_impact_range"],
+                "values": {
+                    "d1_or_worse_percent": 20,
+                    "seven_day_forecast_valid_start": "2026-07-30",
+                    "seven_day_forecast_valid_end": "2026-08-05",
+                },
+                "missing": [
+                    "14_day_forecast",
+                    "crop_condition_ratings",
+                    "condition_based_weather_risk_score",
+                    "critical_forecast_dates",
+                    "yield_impact_range",
+                ],
             },
         ),
         outlook_loader=snapshot_loader(
@@ -301,6 +315,18 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
                 "issue_date": "2026-07-30",
                 "valid_start": "2026-08-07",
                 "valid_end": "2026-08-13",
+            },
+        ),
+        crop_progress_loader=snapshot_loader(
+            "crop_progress",
+            "source_usda_nass_corn_crop_progress",
+            {
+                "status": "ready",
+                "values": {
+                    "week_ending": "2026-07-26",
+                    "silking_percent": 78,
+                    "dough_percent": 25,
+                },
             },
         ),
         macro_loader=snapshot_loader(
@@ -346,6 +372,13 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
         "2026-07-30"
     )
     assert "14_day_forecast" not in payload["weather"]["missing"]
+    assert "crop_condition_ratings" not in payload["weather"]["missing"]
+    assert payload["weather"]["crop_progress"]["values"]["silking_percent"] == 78
+    assert payload["weather"]["critical_forecast_dates"] == {
+        "start": "2026-07-30",
+        "end": "2026-08-13",
+        "basis": "78% silking and 25% dough as of 2026-07-26",
+    }
     assert "yield_impact_range" in payload["weather"]["missing"]
 
 
@@ -835,6 +868,87 @@ class _WeatherResponse:
         return self._payload
 
 
+def _crop_progress_report() -> bytes:
+    return b"""Crop Progress
+
+Released July 27, 2026, by the National Agricultural Statistics Service (NASS).
+
+Corn Silking - Selected States
+[These 18 States planted 91% of the 2025 corn acreage]
+18 States .......:    73          59          78          74
+
+Corn Dough - Selected States
+[These 18 States planted 91% of the 2025 corn acreage]
+18 States .......:    24          13          25          22
+
+Corn Condition - Selected States: Week Ending July 26, 2026
+[These 18 States planted 91% of the 2025 corn acreage]
+18 States ......:     3           9          25          50          13
+Previous week ..:     2           7          24          51          16
+Previous year ..:     2           5          20          53          20
+
+Soybeans Blooming - Selected States
+"""
+
+
+class _CropProgressSession:
+    def get(self, url: str, **_kwargs):
+        if "publications/8336h188j" in url:
+            return _WeatherResponse(
+                content=b"""
+                <a href="/sites/default/release-files/1/prog2926.txt">Text</a>
+                <a href="/publication/crop-progress/2026-07-20">Old</a>
+                <a href="/sites/default/release-files/2/prog3026.txt">Text</a>
+                <a href="/publication/crop-progress/2026-07-27">Current</a>
+                """
+            )
+        assert url.endswith("prog3026.txt")
+        return _WeatherResponse(content=_crop_progress_report())
+
+
+@pytest.mark.unit
+def test_crop_progress_builds_condition_risk_and_stage_facts():
+    snapshot = load_corn_crop_progress(
+        as_of=datetime(2026, 7, 31, 23, tzinfo=UTC),
+        session=_CropProgressSession(),
+        retrieved_at=datetime(2026, 7, 31, 23, 30, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert values["week_ending"] == "2026-07-26"
+    assert values["good_excellent_percent"] == 63
+    assert values["poor_very_poor_percent"] == 12
+    assert values["condition_based_weather_risk_score"] == 34.75
+    assert values["condition_based_weather_risk_change_week_over_week"] == 2.75
+    assert values["silking_percent"] == 78
+    assert values["silking_vs_five_year_average_percentage_points"] == 4
+    assert values["dough_percent"] == 25
+    assert values["condition_risk_data_coverage_confidence_percent"] == 91
+    assert len(snapshot.observations) == 12
+    assert b"prog3026.txt" in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_crop_progress_excludes_release_not_yet_conservatively_available():
+    class PriorSession(_CropProgressSession):
+        def get(self, url: str, **kwargs):
+            if "publications/8336h188j" in url:
+                return super().get(url, **kwargs)
+            assert url.endswith("prog2926.txt")
+            prior = _crop_progress_report().replace(
+                b"Released July 27, 2026",
+                b"Released July 20, 2026",
+            )
+            return _WeatherResponse(content=prior)
+
+    snapshot = load_corn_crop_progress(
+        as_of=datetime(2026, 7, 27, 20, 30, tzinfo=UTC),
+        session=PriorSession(),
+    )
+
+    assert snapshot.source["vintage"] == "2026-07-20"
+
+
 def _cpc_kmz(variable: str, category: str, probability: float) -> bytes:
     label = "Temperature" if variable == "temp" else "Precipitation"
     kml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -908,12 +1022,33 @@ def test_cpc_outlook_uses_dated_archive_and_acreage_weighted_categories():
                 "missing": ["yield_impact_range"],
                 "methodology": "fixture",
                 "outlook_8_14_day": dict(section),
+                "crop_progress": {
+                    "methodology": "fixture crop methodology.",
+                    "values": {
+                        "week_ending": "2026-07-26",
+                        "good_excellent_percent": 63,
+                        "poor_very_poor_percent": 12,
+                        "condition_based_weather_risk_score": 34.75,
+                        "condition_based_weather_risk_change_week_over_week": 2.75,
+                        "condition_acreage_coverage_percent": 91,
+                        "silking_percent": 78,
+                        "dough_percent": 25,
+                    },
+                },
+                "critical_forecast_dates": {
+                    "start": "2026-07-31",
+                    "end": "2026-08-13",
+                    "basis": "78% silking and 25% dough as of 2026-07-26",
+                },
             },
         }
     )
     assert "## CPC 8-14 day outlook" in report
     assert "above normal" in report
     assert "below normal" in report
+    assert "## USDA crop condition and development" in report
+    assert "34.75" in report
+    assert "2026-07-31 through 2026-08-13" in report
 
 
 @pytest.mark.unit

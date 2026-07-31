@@ -434,6 +434,35 @@ the same twelve transparent Corn Belt points used by the seven-day layer.
 """
     else:
         outlook_text = "\n\nThe CPC 8-14 day outlook was unavailable."
+    crop_progress = section.get("crop_progress")
+    if crop_progress:
+        crop_values = crop_progress["values"]
+        crop_period = crop_values["week_ending"]
+        critical = section.get("critical_forecast_dates")
+        critical_text = (
+            f"The monitored forecast window is {critical['start']} through "
+            f"{critical['end']}, based on {critical['basis']}."
+            if critical
+            else "A crop-stage-linked forecast window was unavailable."
+        )
+        crop_progress_text = f"""
+
+## USDA crop condition and development
+
+| Metric | Value | Evidence |
+|---|---:|---|
+| Good or excellent | {_number(crop_values["good_excellent_percent"], 1)}% | {_official_fact("corn_crop_good_excellent_percent", crop_period)} |
+| Poor or very poor | {_number(crop_values["poor_very_poor_percent"], 1)}% | {_official_fact("corn_crop_poor_very_poor_percent", crop_period)} |
+| Condition-based weather-risk score (0 low, 100 high) | {_number(crop_values["condition_based_weather_risk_score"], 2)} | {_official_fact("corn_crop_condition_based_weather_risk_score", crop_period)} |
+| Weekly risk-score change | {_number(crop_values["condition_based_weather_risk_change_week_over_week"], 2)} points | {_official_fact("corn_crop_condition_based_weather_risk_change_week_over_week", crop_period)} |
+| Corn silking | {_number(crop_values["silking_percent"], 1)}% | {_official_fact("corn_crop_silking_percent", crop_period)} |
+| Corn dough | {_number(crop_values["dough_percent"], 1)}% | {_official_fact("corn_crop_dough_percent", crop_period)} |
+| Reported acreage coverage | {_number(crop_values["condition_acreage_coverage_percent"], 1)}% | {_official_fact("corn_crop_condition_risk_data_coverage_confidence_percent", crop_period)} |
+
+{crop_progress["methodology"]} {critical_text}
+"""
+    else:
+        crop_progress_text = "\n\nUSDA crop-condition evidence was unavailable."
     return f"""# Corn weather and drought
 
 **Status:** {section["status"]}
@@ -456,6 +485,7 @@ the same twelve transparent Corn Belt points used by the seven-day layer.
 
 This is useful current context, but it is not yet a complete weather-and-yield
 model. Remaining weather fields: {missing}.
+{crop_progress_text}
 {outlook_text}
 """
 

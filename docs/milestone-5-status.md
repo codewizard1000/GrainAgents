@@ -50,6 +50,11 @@ It also archived twelve NOAA NCEI 1991-2020 daily-normal station files and
 produced cited seven-day temperature and precipitation normal and anomaly
 facts. For July 31-August 6, forecast precipitation was 6.116 mm above the
 sample-weighted normal and forecast mean temperature was 1.237 C below it.
+The same run archived USDA NASS Crop Progress, emitted 12 crop-condition and
+development facts, rendered a 34.75 condition-based weather-risk index with a
+2.75-point weekly increase, and marked July 31-August 13 as the critical
+monitoring window. The newsletter explicitly says the index is not yield
+calibrated.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -108,7 +113,7 @@ comparison baseline.
   acreage weighting, historical-replay refusal, pipeline merging, and cited
   weather/newsletter rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 652 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 656 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
@@ -124,6 +129,9 @@ comparison baseline.
 - Calibrated weather risk and yield impact remain missing. Sample-weighted
   seven-day anomaly magnitudes, the CPC 8-14 day probability layer, export
   sales, and export inspections are connected for current runs.
+- Transient Databento HTTP 500, 502, 503, and 504 responses receive at most
+  three attempts with 1- and 2-second backoff. Authentication, entitlement,
+  billing, invalid-request, and missing-data failures still fail immediately.
 - The current Databento/exchange license scope is internal testing only, so
   publication must remain blocked regardless of editorial approval.
 - Soybean and wheat publication renderers are not implemented in this slice.
@@ -133,4 +141,7 @@ comparison baseline.
 - Add official shipping, river/port, sanctions, China-policy, and international
   crop-estimate sources to broaden the partial grain-news layer.
 - Add calibrated weather-risk and yield-impact evidence.
+- Apply the published USDA ERS monthly corn-yield equation only after the July
+  point-in-time weather panel is complete, or develop and validate a distinct
+  weekly model before using seven-day forecasts.
 - Start saving forecast vintages for genuine future-outcome scoring.

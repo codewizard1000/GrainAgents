@@ -19,7 +19,9 @@ publication.
 > filtered Federal Register grain-policy events. It now adds production-
 > weighted corn drought exposure, an acreage-weighted seven-day NWS sample
 > with fixed-station NCEI 1991-2020 temperature and precipitation anomalies,
-> a dated acreage-weighted CPC 8–14-day outlook, and a rolling-validated
+> a dated acreage-weighted CPC 8–14-day outlook, a USDA NASS corn-condition
+> and development layer with a transparent
+> condition-based monitoring index, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Calibrated weather-
 > risk and yield-impact estimates, live forecast scoring, and final publication
@@ -89,6 +91,14 @@ precipitation normals from changes in NCEI month-to-date normals, and then
 weights station-level temperature and precipitation anomalies by USDA 2026
 intended corn acres. This is an auditable acreage sample, not a calibrated
 field-level yield model.
+
+Current corn runs also archive the latest point-in-time-safe USDA NASS Crop
+Progress text report. The weather report shows national corn-condition shares,
+good/excellent and poor/very-poor totals, silking and dough progress, and an
+explicit 0-100 condition-based weather-risk index. The index assigns fixed
+weights of 100, 75, 50, 25, and 0 to very poor through excellent condition.
+It is a reproducible monitoring index with week-over-week change and acreage
+coverage, not a yield-calibrated model or yield forecast.
 
 For internal testing with Databento, set these values in the ignored `.env`
 file:

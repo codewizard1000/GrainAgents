@@ -357,13 +357,55 @@ def build_publication_bundle(
             f"{_number(temperature_anomaly['value'], 1)} C "
             f"{_citation(temperature_anomaly)} and the precipitation anomaly "
             f"is {_number(precipitation_anomaly['value'], 1)} mm "
-            f"{_citation(precipitation_anomaly)}. Calibrated yield impact and "
-            "a complete weather-risk score remain missing."
+            f"{_citation(precipitation_anomaly)}."
         )
     else:
         weather_anomaly_text = (
             "Temperature and rainfall anomalies, calibrated yield impact, "
             "and a complete weather-risk score remain missing."
+        )
+    condition_risk = _find_optional_fact(
+        evidence,
+        "corn_crop_condition_based_weather_risk_score",
+    )
+    condition_risk_change = _find_optional_fact(
+        evidence,
+        "corn_crop_condition_based_weather_risk_change_week_over_week",
+    )
+    good_excellent = _find_optional_fact(
+        evidence,
+        "corn_crop_good_excellent_percent",
+    )
+    silking = _find_optional_fact(evidence, "corn_crop_silking_percent")
+    dough = _find_optional_fact(evidence, "corn_crop_dough_percent")
+    if all(
+        fact is not None
+        for fact in (
+            condition_risk,
+            condition_risk_change,
+            good_excellent,
+            silking,
+            dough,
+        )
+    ):
+        crop_condition_text = (
+            f"USDA rated {_number(good_excellent['value'], 1)}% of reported "
+            f"corn acres good or excellent {_citation(good_excellent)}. The "
+            "transparent condition-based weather-risk index is "
+            f"{_number(condition_risk['value'], 2)} out of 100 "
+            f"{_citation(condition_risk)}, a weekly change of "
+            f"{_number(condition_risk_change['value'], 2)} points "
+            f"{_citation(condition_risk_change)}; "
+            f"{_number(silking['value'], 1)}% was silking {_citation(silking)} "
+            f"and {_number(dough['value'], 1)}% was at dough "
+            f"{_citation(dough)}. This monitoring index is not yield "
+            "calibrated; a calibrated weather-risk score and yield-impact "
+            "range remain missing."
+        )
+    else:
+        crop_condition_text = (
+            "USDA crop-condition evidence and a yield-calibrated weather-risk "
+            "score remain missing."
         )
     weather_outlook = (evidence.get("weather") or {}).get("outlook_8_14_day")
     if weather_outlook:
@@ -844,6 +886,7 @@ Moderate drought or worse covers {_number(drought["value"], 1)}% of corn area
 {_citation(drought)}. The acreage-sample-weighted seven-day precipitation
 forecast is {_number(precipitation["value"], 1)} mm
 {_citation(precipitation)}. {extended_weather_text} {weather_anomaly_text}
+{crop_condition_text}
 {weather_chart}
 
 ## Export and domestic demand

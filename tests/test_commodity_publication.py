@@ -425,3 +425,49 @@ def test_publication_renders_seven_day_weather_anomalies():
     assert "precipitation anomaly is -8.3 mm" in bundle.newsletter
     assert "[fact_corn_weather_temperature_anomaly]" in bundle.newsletter
     assert "Temperature and rainfall anomalies" not in bundle.newsletter
+
+
+@pytest.mark.unit
+def test_publication_renders_condition_based_weather_risk():
+    evidence = _evidence()
+    evidence["facts"].extend(
+        [
+            _fact(
+                "fact_corn_crop_condition_risk",
+                "corn_crop_condition_based_weather_risk_score",
+                34.75,
+            ),
+            _fact(
+                "fact_corn_crop_condition_risk_change",
+                "corn_crop_condition_based_weather_risk_change_week_over_week",
+                2.75,
+            ),
+            _fact(
+                "fact_corn_crop_good_excellent",
+                "corn_crop_good_excellent_percent",
+                63,
+            ),
+            _fact(
+                "fact_corn_crop_silking",
+                "corn_crop_silking_percent",
+                78,
+            ),
+            _fact(
+                "fact_corn_crop_dough",
+                "corn_crop_dough_percent",
+                25,
+            ),
+        ]
+    )
+
+    bundle = build_publication_bundle(
+        evidence,
+        quantitative=_quantitative(),
+        scenarios=_scenarios(),
+    )
+
+    assert "condition-based weather-risk index is 34.75" in bundle.newsletter
+    assert "weekly change of 2.75 points" in bundle.newsletter
+    assert "63% of reported corn acres good or excellent" in bundle.newsletter
+    assert "This monitoring index is not yield calibrated" in bundle.newsletter
+    assert "[fact_corn_crop_condition_risk]" in bundle.newsletter

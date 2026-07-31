@@ -468,7 +468,10 @@ def _weather_drought(
             for level in range(5)
         ],
         sha256=digest,
-        limitation="Calibrated weather-risk and yield-impact estimates are missing.",
+        limitation=(
+            "The USDA condition-based monitoring index is not yield calibrated; "
+            "a calibrated risk score and yield-impact range are missing."
+        ),
     )
 
 

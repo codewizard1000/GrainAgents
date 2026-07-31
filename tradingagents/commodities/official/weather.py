@@ -529,6 +529,9 @@ def load_corn_weather(
         "values": values,
         "missing": [
             "14_day_forecast",
+            "crop_condition_ratings",
+            "condition_based_weather_risk_score",
+            "critical_forecast_dates",
             "calibrated_weather_risk_score",
             "yield_impact_range",
         ],

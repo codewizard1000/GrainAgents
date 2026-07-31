@@ -7,6 +7,7 @@ from unittest import mock
 
 import pandas as pd
 import pytest
+from databento.common.error import BentoServerError
 
 from tradingagents.commodities.providers import CONTRACT_HISTORY_PROVIDERS
 from tradingagents.commodities.providers.databento import (
@@ -65,6 +66,18 @@ class _WarningDatabentoClient(_FakeDatabentoClient):
             UserWarning,
             stacklevel=2,
         )
+        return super().get_range(**kwargs)
+
+
+class _TransientDatabentoClient(_FakeDatabentoClient):
+    def __init__(self, frames: dict[str, pd.DataFrame]):
+        super().__init__(frames)
+        self.range_attempts = 0
+
+    def get_range(self, **kwargs):
+        self.range_attempts += 1
+        if self.range_attempts == 1:
+            raise BentoServerError(504, message="gateway timeout")
         return super().get_range(**kwargs)
 
 
@@ -186,6 +199,26 @@ def test_databento_preserves_vendor_quality_warnings():
         end_date="2026-07-29",
     )
     assert any("reduced historical quality" in item for item in result.warnings)
+
+
+@pytest.mark.unit
+def test_databento_retries_transient_server_failure_with_bounded_backoff():
+    client = _TransientDatabentoClient(_frames())
+    delays: list[float] = []
+    provider = DatabentoContractHistoryProvider(
+        client=client,
+        sleep=delays.append,
+    )
+
+    result = provider.get_contract_history(
+        contract_symbol="ZCZ26",
+        start_date="2026-07-28",
+        end_date="2026-07-29",
+    )
+
+    assert result.requested_symbol == "ZCZ26"
+    assert client.range_attempts == 4
+    assert delays == [1]
 
 
 @pytest.mark.unit

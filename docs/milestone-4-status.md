@@ -13,6 +13,15 @@
 - Added dated NOAA CPC 8-14 day temperature and precipitation GIS archives,
   classified at the same twelve points and weighted by intended corn acres.
   Mutable `latest` files are not used.
+- Added the archived USDA NASS weekly Crop Progress text report with national
+  corn-condition shares, silking, dough, prior-week comparisons, and acreage
+  coverage.
+- Added a deterministic condition-based weather-risk monitoring index. It
+  weights very poor, poor, fair, good, and excellent shares at 100, 75, 50,
+  25, and 0; reports weekly and annual changes; and is explicitly not labelled
+  as yield calibrated.
+- Added crop-stage-linked critical monitoring dates spanning the available
+  seven-day NWS and 8-14-day CPC windows.
 - Added current-endpoint safety: current weather calls are rejected for
   historical as-of dates and NWS grid updates after the run timestamp are
   excluded.
@@ -65,6 +74,21 @@ acres in an above-normal temperature category. For precipitation, 86.03% fell
 in below-normal and 13.97% in near-normal categories. Eight stable facts and
 the exact dated temperature and precipitation KMZ payloads were archived.
 
+The USDA NASS report released July 27 for the week ending July 26 reported:
+
+- 63% of corn in good or excellent condition
+- 12% in poor or very poor condition
+- a 34.75 condition-based weather-risk index, 2.75 points worse than the prior
+  week and 5.75 points worse than the prior year
+- 78% silking versus a 74% five-year average
+- 25% at dough versus a 22% five-year average
+- 91% coverage of prior-year planted corn acreage across the 18 reported
+  States
+
+The exact report and archive-index HTML were preserved in a 139,965-byte raw
+archive, and 12 stable crop-progress facts were added. The reproductive-stage
+evidence sets July 31-August 13 as the current critical monitoring window.
+
 Using the archived 310-observation `ZCZ26` history, the baseline ensemble
 produced deterministic 5-, 20-, and 60-trading-day distributions. The
 60-trading-day result had materially lower confidence and higher model
@@ -112,6 +136,13 @@ where the range is wide or observed coverage is below nominal.
   climatology and does not capture within-state variation.
 - A calibrated weather risk score and yield-impact range are still missing, so
   weather remains `partial`.
+- USDA ERS published an acreage-weighted monthly corn-yield equation using
+  July temperature and nonlinear July precipitation. It is not applied to the
+  current seven-day forecast because that would mix weekly anomalies with
+  monthly coefficients. NOAA nClimGrid-Daily preliminary July area averages
+  were complete only through July 26 during the July 31 run. The yield slice
+  must wait for a point-in-time-complete July observation/forecast panel or
+  implement a separately validated weekly model.
 - Forecast models are currently price-only and do not yet ingest the official
   fundamental or weather features.
 - Rolling backtests are now leak-safe and auditable, but they are not a
