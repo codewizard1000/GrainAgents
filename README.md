@@ -51,6 +51,14 @@ The run remains `publication_ready: false` until complete weather anomalies,
 export demand, out-of-sample forecast scoring, and editorial approval are
 implemented.
 
+The corn publication draft includes local PNG charts for exact-contract price
+and moving averages, the futures curve, CFTC positioning, indexed contract
+history, adaptive-conformal forecast ranges, scenario probabilities, drought
+exposure, and stocks-to-use. Every chart records contract, as-of date, units,
+sources, evidence references, and a SHA-256 in `charts/charts_manifest.json`.
+The seasonal and scenario-change charts remain explicitly partial until a
+multi-year seasonal panel and an earlier approved report exist.
+
 For internal testing with Databento, set these values in the ignored `.env`
 file:
 

@@ -18,6 +18,11 @@ from tradingagents.commodities.artifacts import (
     write_official_archives,
     write_source_audit,
 )
+from tradingagents.commodities.charts import generate_publication_charts
+from tradingagents.commodities.comparison import (
+    build_prior_report_comparison,
+    find_prior_approved_outlook,
+)
 from tradingagents.commodities.evidence import (
     build_evidence_package,
     normalize_horizons,
@@ -190,19 +195,6 @@ def analyze(
 
     evidence = forecast_run.evidence
     payload = evidence.to_dict()
-    publication_bundle = (
-        build_publication_bundle(
-            payload,
-            quantitative=forecast_run.quantitative_forecast,
-            scenarios=forecast_run.scenarios,
-        )
-        if official_run is not None
-        and evidence.instrument.commodity.value == "corn"
-        and evidence.supply_demand.get("status") == "ready"
-        and evidence.demand.get("status") == "ready"
-        and evidence.positioning.get("status") == "ready"
-        else None
-    )
     run_dir = (
         results_dir
         / evidence.instrument.commodity.value
@@ -210,6 +202,63 @@ def analyze(
         / evidence.as_of.date().isoformat()
     )
     run_dir.mkdir(parents=True, exist_ok=True)
+    publication_prerequisites = (
+        official_run is not None
+        and evidence.instrument.commodity.value == "corn"
+        and evidence.supply_demand.get("status") == "ready"
+        and evidence.demand.get("status") == "ready"
+        and evidence.positioning.get("status") == "ready"
+        and bool(evidence.weather.get("values"))
+    )
+    publication_bundle = None
+    prior_comparison = None
+    charts_manifest = None
+    chart_paths: list[str] = []
+    comparison_path: Path | None = None
+    if publication_prerequisites:
+        prior_outlook = find_prior_approved_outlook(
+            results_dir,
+            commodity=evidence.instrument.commodity.value,
+            contract_symbol=evidence.instrument.symbol,
+            current_date=evidence.as_of.date(),
+        )
+        preliminary_bundle = build_publication_bundle(
+            payload,
+            quantitative=forecast_run.quantitative_forecast,
+            scenarios=forecast_run.scenarios,
+        )
+        prior_comparison = build_prior_report_comparison(
+            preliminary_bundle.final_outlook,
+            prior_outlook,
+        )
+        charts_dir = run_dir / "charts"
+        charts_dir.mkdir(parents=True, exist_ok=True)
+        charts_manifest = generate_publication_charts(
+            charts_dir,
+            evidence=payload,
+            history=run.primary_history,
+            quantitative=forecast_run.quantitative_forecast,
+            scenarios=forecast_run.scenarios,
+            prior_outlook=prior_outlook,
+        )
+        charts_manifest_path = charts_dir / "charts_manifest.json"
+        write_json(charts_manifest_path, charts_manifest)
+        chart_paths = [
+            "charts/charts_manifest.json",
+            *[
+                f"charts/{chart['filename']}"
+                for chart in charts_manifest["charts"]
+            ],
+        ]
+        comparison_path = run_dir / "prior_report_comparison.json"
+        write_json(comparison_path, prior_comparison)
+        publication_bundle = build_publication_bundle(
+            payload,
+            quantitative=forecast_run.quantitative_forecast,
+            scenarios=forecast_run.scenarios,
+            prior_comparison=prior_comparison,
+            charts_manifest=charts_manifest,
+        )
 
     evidence_path = run_dir / "evidence.json"
     write_json(evidence_path, payload)
@@ -312,6 +361,16 @@ def analyze(
             "forecast_performance_methodology": payload["forecast"][
                 "performance_registry"
             ]["methodology_version"],
+            "chart_methodology": (
+                charts_manifest["chart_version"]
+                if charts_manifest is not None
+                else None
+            ),
+            "prior_report_comparison_methodology": (
+                prior_comparison["comparison_version"]
+                if prior_comparison is not None
+                else None
+            ),
             "official_sources": [
                 source["dataset"]
                 for source in payload["sources"]
@@ -352,6 +411,8 @@ def analyze(
             "quantitative_forecast.json",
             "forecast_performance.json",
             "scenario_report.json",
+            *chart_paths,
+            *([comparison_path.name] if comparison_path is not None else []),
             *[path.name for path in publication_paths],
             "source_audit.csv",
             *[

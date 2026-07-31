@@ -19,6 +19,14 @@
   records the human editor, timestamp, note, and SHA-256 of the exact approved
   artifact.
 - Added publication state and artifacts to the run manifest.
+- Added eight deterministic PNG charts: price/technicals, futures curve, CFTC
+  positioning, indexed exact-contract history, forecast fan, scenario
+  probabilities, drought exposure, and stocks-to-use.
+- Added `charts_manifest.json` with contract, as-of timestamp, unit, sources,
+  evidence references, status, limitation, and SHA-256 for every chart.
+- Added exact-contract discovery of the most recent earlier approved outlook
+  and deterministic `prior_report_comparison.json`.
+- Embedded the chart package into the newsletter at the relevant sections.
 
 ## Live verification
 
@@ -37,6 +45,16 @@ Its current blockers are:
 
 The live draft remains `publication_ready: false`.
 
+The live chart package generated eight visually inspected PNG files. Five are
+ready or research-ready; the seasonal chart is explicitly partial because a
+multi-year contract-month panel is unavailable, the weather chart remains
+partial with the weather evidence, and scenario probabilities are
+current-only because no earlier approved report exists.
+
+`prior_report_comparison.json` correctly reports
+`no_prior_approved_report`; a blocked or unapproved draft is never used as the
+comparison baseline.
+
 ## Architecture decisions
 
 - Publication prose is deterministic in this slice. No LLM is allowed to
@@ -47,6 +65,11 @@ The live draft remains `publication_ready: false`.
   blocked draft; it cannot approve or publish it.
 - Approval creates a local approved artifact and audit record but does not send
   email, update a newsletter platform, or otherwise publish externally.
+- Charts are rendered locally with Matplotlib's non-interactive backend. Chart
+  metadata references are validated against fact and deterministic-output IDs
+  before the manifest is accepted.
+- Prior-report comparison is exact-contract only and considers only earlier
+  runs whose publication status is approved and publication-ready.
 
 ## Tests and verification
 
@@ -54,6 +77,10 @@ The live draft remains `publication_ready: false`.
   references, and horizon-specific forecast fact selection.
 - CLI tests cover artifact generation, newsletter routing, blocked approval,
   successful human approval, and artifact hashing.
+- Chart tests verify PNG signatures, non-empty render output, required metadata,
+  evidence references, and partial-status disclosures.
+- Comparison tests verify that the latest earlier approved report is selected
+  while newer blocked drafts are ignored.
 - The live EIA credential remains absent from all generated artifacts.
 
 ## Current limitations
@@ -61,7 +88,10 @@ The live draft remains `publication_ready: false`.
 - The news report is an explicit unavailable marker, not a news analyst.
 - Change-from-prior-report cannot be calculated until an earlier approved
   publication exists.
-- Required charts are not generated yet.
+- A true multi-year seasonal comparison is not available; the current chart is
+  an explicitly labelled indexed exact-contract history.
+- Scenario-probability change cannot be plotted until an approved prior report
+  exists.
 - Weather anomalies, a 14-day weather layer, yield impact, export sales, and
   export inspections remain missing.
 - The current Databento/exchange license scope is internal testing only, so
@@ -70,7 +100,7 @@ The live draft remains `publication_ready: false`.
 
 ## Next publication slice
 
-- Generate evidence-linked charts with contract, date, units, and source.
-- Add deterministic prior-report comparison.
 - Connect export-demand and grain-news evidence before making the draft
   eligible for approval.
+- Complete weather anomalies, 14-day forecasts, and yield-impact evidence.
+- Start saving forecast vintages for genuine future-outcome scoring.

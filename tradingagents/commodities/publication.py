@@ -61,6 +61,7 @@ def _reference_forecast(
 def _publication_blockers(
     evidence: dict[str, Any],
     quantitative: dict[str, Any],
+    charts_manifest: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     blockers = [
         {
@@ -125,6 +126,20 @@ def _publication_blockers(
             "message": "Weekly export-sales and export-inspection evidence is unavailable.",
         }
     )
+    if charts_manifest is not None and any(
+        chart["filename"] == "seasonal_comparison.png"
+        and chart["status"] != "ready"
+        for chart in charts_manifest["charts"]
+    ):
+        blockers.append(
+            {
+                "code": "seasonal_chart_incomplete",
+                "message": (
+                    "A multi-year contract-month-aligned seasonal comparison "
+                    "is unavailable."
+                ),
+            }
+        )
     return blockers
 
 
@@ -163,11 +178,26 @@ def _source_lines(evidence: dict[str, Any]) -> str:
     return "\n".join(rendered)
 
 
+def _chart_markdown(
+    charts_manifest: dict[str, Any] | None,
+    filename: str,
+    alt_text: str,
+) -> str:
+    if charts_manifest is None or not any(
+        chart["filename"] == filename
+        for chart in charts_manifest["charts"]
+    ):
+        return ""
+    return f"\n\n![{alt_text}](charts/{filename})"
+
+
 def build_publication_bundle(
     evidence: dict[str, Any],
     *,
     quantitative: dict[str, Any],
     scenarios: dict[str, Any],
+    prior_comparison: dict[str, Any] | None = None,
+    charts_manifest: dict[str, Any] | None = None,
 ) -> PublicationBundle:
     """Build a blocked, evidence-linked publication draft.
 
@@ -199,8 +229,33 @@ def build_publication_bundle(
         "output_scenario_bear_probability": probabilities["bear"],
         "output_publication_directional_bias": directional_bias,
     }
+    if prior_comparison and prior_comparison.get("status") == "ready":
+        changes = prior_comparison["changes"]
+        output_values.update(
+            {
+                "output_change_median_projected_price": changes[
+                    "median_projected_price"
+                ],
+                "output_change_forecast_confidence_score": changes[
+                    "forecast_confidence_score"
+                ],
+                "output_change_scenario_probability_bull": changes[
+                    "scenario_probability_bull"
+                ],
+                "output_change_scenario_probability_base": changes[
+                    "scenario_probability_base"
+                ],
+                "output_change_scenario_probability_bear": changes[
+                    "scenario_probability_bear"
+                ],
+            }
+        )
     output_ids = set(output_values)
-    blockers = _publication_blockers(evidence, quantitative)
+    blockers = _publication_blockers(
+        evidence,
+        quantitative,
+        charts_manifest,
+    )
     status = {
         "schema_version": "1.0",
         "publication_version": PUBLICATION_VERSION,
@@ -306,6 +361,11 @@ def build_publication_bundle(
         ],
         "publication_ready": False,
         "human_approval_required": True,
+        "prior_report_comparison_status": (
+            prior_comparison["status"]
+            if prior_comparison is not None
+            else "not_evaluated"
+        ),
     }
 
     bull_bear = f"""# Bull and bear case — DRAFT
@@ -377,6 +437,66 @@ fabricated. This missing section is a publication blocker.
         for blocker in blockers
     )
     source_lines = _source_lines(evidence)
+    if prior_comparison and prior_comparison.get("status") == "ready":
+        changes = prior_comparison["changes"]
+        change_section = f"""The median projection changed by
+${_number(changes["median_projected_price"], 4)}
+[output_change_median_projected_price] from the most recent approved report.
+Forecast confidence changed by
+{_number(changes["forecast_confidence_score"], 1)} points
+[output_change_forecast_confidence_score]. Bull, base, and bear probabilities
+changed by {_number(changes["scenario_probability_bull"] * 100, 1)},
+{_number(changes["scenario_probability_base"] * 100, 1)}, and
+{_number(changes["scenario_probability_bear"] * 100, 1)} percentage points
+[output_change_scenario_probability_bull]
+[output_change_scenario_probability_base]
+[output_change_scenario_probability_bear]."""
+    else:
+        change_section = (
+            "No prior approved GrainAgents publication is available for a "
+            "deterministic change comparison."
+        )
+
+    forecast_chart = _chart_markdown(
+        charts_manifest,
+        "forecast_fan.png",
+        f"{symbol} calibrated forecast fan",
+    )
+    scenario_chart = _chart_markdown(
+        charts_manifest,
+        "scenario_probabilities.png",
+        f"{symbol} scenario probabilities",
+    )
+    price_chart = _chart_markdown(
+        charts_manifest,
+        "price_technicals.png",
+        f"{symbol} price and moving averages",
+    )
+    curve_chart = _chart_markdown(
+        charts_manifest,
+        "futures_curve.png",
+        "CBOT corn futures curve",
+    )
+    seasonal_chart = _chart_markdown(
+        charts_manifest,
+        "seasonal_comparison.png",
+        f"{symbol} indexed history",
+    )
+    stocks_chart = _chart_markdown(
+        charts_manifest,
+        "stocks_to_use.png",
+        "U.S. corn stocks-to-use ratio",
+    )
+    weather_chart = _chart_markdown(
+        charts_manifest,
+        "weather_drought.png",
+        "Corn-area drought exposure",
+    )
+    positioning_chart = _chart_markdown(
+        charts_manifest,
+        "cot_positioning.png",
+        "CFTC corn positioning",
+    )
     newsletter = f"""# DRAFT — NOT APPROVED FOR PUBLICATION
 
 ## {headline}
@@ -411,11 +531,13 @@ trading sessions [output_reference_horizon_trading_days]. Its calibrated 80%
 range is ${_number(reference["prediction_interval_80"][0], 4)} to
 ${_number(reference["prediction_interval_80"][1], 4)}
 {_citation(forecast_interval)}.
+{forecast_chart}
 
 ## What changed this week
 
-No prior approved GrainAgents publication is available for a deterministic
-change comparison. The current 20-session contract return is
+{change_section}
+
+The current 20-session contract return is
 {_number(return_20["value"], 2)}% {_citation(return_20)}.
 
 ## Technical picture
@@ -427,6 +549,9 @@ ${_number(sma_50["value"], 4)} {_citation(sma_50)}, and 14-session RSI is
 {_number(rsi["value"], 1)} {_citation(rsi)}. Observed support is
 ${_number(support["value"], 4)} {_citation(support)} and resistance is
 ${_number(resistance["value"], 4)} {_citation(resistance)}.
+{price_chart}
+{curve_chart}
+{seasonal_chart}
 
 ## Supply and demand
 
@@ -435,6 +560,7 @@ WASDE production is {_number(production["value"], 0)} million bushels
 {_number(ending_stocks["value"], 0)} million bushels
 {_citation(ending_stocks)}, and projected exports are
 {_number(exports["value"], 0)} million bushels {_citation(exports)}.
+{stocks_chart}
 
 ## Weather and yield risk
 
@@ -444,6 +570,7 @@ forecast is {_number(precipitation["value"], 1)} mm
 {_citation(precipitation)}. Temperature and rainfall anomalies, a 14-day
 forecast, calibrated yield impact, and a complete weather-risk score remain
 missing.
+{weather_chart}
 
 ## Export and domestic demand
 
@@ -459,6 +586,7 @@ connected.
 The all-month legacy CFTC noncommercial net position is
 {_number(noncommercial_net["value"], 0)} contracts
 {_citation(noncommercial_net)}.
+{positioning_chart}
 
 ## Bull, base, and bear cases
 
@@ -469,6 +597,7 @@ The bull, base, and bear probabilities are
 [output_scenario_bull_probability] [output_scenario_base_probability]
 [output_scenario_bear_probability]. These probabilities are deterministic
 transformations of the forecast distribution.
+{scenario_chart}
 
 ## Levels and events to watch
 

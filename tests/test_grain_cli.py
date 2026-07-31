@@ -198,6 +198,9 @@ def test_newsletter_output_writes_blocked_publication_bundle(
             supply_demand=freeze_evidence_value({"status": "ready"}),
             demand=freeze_evidence_value({"status": "ready"}),
             positioning=freeze_evidence_value({"status": "ready"}),
+            weather=freeze_evidence_value(
+                {"status": "partial", "values": {"fixture": True}}
+            ),
         )
         return SimpleNamespace(evidence=evidence, archives=())
 
@@ -227,6 +230,24 @@ def test_newsletter_output_writes_blocked_publication_bundle(
             return_value=bundle,
         ),
         mock.patch(
+            "cli.grain.find_prior_approved_outlook",
+            return_value=None,
+        ),
+        mock.patch(
+            "cli.grain.build_prior_report_comparison",
+            return_value={
+                "comparison_version": "fixture-comparison-v1",
+                "status": "unavailable",
+            },
+        ),
+        mock.patch(
+            "cli.grain.generate_publication_charts",
+            return_value={
+                "chart_version": "fixture-charts-v1",
+                "charts": [],
+            },
+        ),
+        mock.patch(
             "cli.grain.render_supply_demand_report",
             return_value="# Supply and demand\n",
         ),
@@ -237,6 +258,10 @@ def test_newsletter_output_writes_blocked_publication_bundle(
         mock.patch(
             "cli.grain.render_positioning_report",
             return_value="# Positioning\n",
+        ),
+        mock.patch(
+            "cli.grain.render_weather_report",
+            return_value="# Weather\n",
         ),
     ):
         result = runner.invoke(
@@ -263,6 +288,8 @@ def test_newsletter_output_writes_blocked_publication_bundle(
     assert manifest["publication_status"] == "blocked"
     assert manifest["publication_ready"] is False
     assert "newsletter.md" in manifest["artifacts"]
+    assert "charts/charts_manifest.json" in manifest["artifacts"]
+    assert "prior_report_comparison.json" in manifest["artifacts"]
     assert (run_dir / "final_outlook.json").exists()
     assert (run_dir / "publication_status.json").exists()
     assert (run_dir / "bull_bear_debate.md").exists()
