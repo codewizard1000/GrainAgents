@@ -41,8 +41,8 @@ grainagents analyze `
 It writes a contract-scoped run manifest, populated evidence JSON, normalized
 Parquet market history, the normalized provider archive, raw official-source
 archives, evidence-linked technical/supply-demand/positioning/weather/forecast
-reports, quantitative forecast and scenario JSON, and a CSV source audit. For
-a current-day run, it uses the
+reports, quantitative forecast, leak-safe rolling performance, and scenario
+JSON, and a CSV source audit. For a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
 The run remains `publication_ready: false` until complete weather anomalies,
 export demand, out-of-sample forecast scoring, and editorial approval are
@@ -93,8 +93,11 @@ local-linear-trend, and exponentially weighted price-change baselines with a
 small regression-tree candidate. Model weights come from rolling historical
 mean absolute error, and the tree receives weight only when it strictly beats
 every transparent baseline for that horizon. Intervals come from rolling
-residual distributions. The output is labelled research-only until saved
-forecasts accumulate genuine out-of-sample scores.
+residual distributions. An expanding-window registry reports MAE, MASE,
+directional accuracy, interval coverage, and quantile loss without using a
+forecast origin's outcome to score itself. Under-coverage reduces forecast
+confidence and raises a quality warning. The output is labelled research-only
+until saved forecasts accumulate genuine out-of-sample scores.
 
 - [Implementation blueprint](instructions.md)
 - [Fork-versus-rewrite architecture decision](docs/adr/0001-fork-tradingagents.md)

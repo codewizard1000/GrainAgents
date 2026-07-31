@@ -157,6 +157,7 @@ def test_analyze_command_writes_verified_technical_artifacts(tmp_path, monkeypat
     assert (run_dir / "weather_report.md").exists()
     assert (run_dir / "forecast_report.md").exists()
     assert (run_dir / "quantitative_forecast.json").exists()
+    assert (run_dir / "forecast_performance.json").exists()
     assert (run_dir / "scenario_report.json").exists()
 
 

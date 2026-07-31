@@ -21,6 +21,11 @@
 - Added rolling horizon-specific validation, inverse-MAE ensemble weights,
   empirical residual prediction intervals, support/resistance probabilities,
   excursion estimates, confidence and disagreement scores.
+- Added an expanding-window performance registry with MAE, MASE, directional
+  accuracy, 50% and 80% interval coverage, and quantile loss. At each scored
+  origin, model weights and interval residuals use only earlier outcomes.
+- Added under-coverage warnings and proportional confidence penalties when the
+  rolling 80% interval achieves less than its nominal coverage.
 - Added deterministic scenarios constrained by the 20-trading-day forecast
   distribution.
 - Added quantitative forecast, scenario, and forecast-report artifacts.
@@ -52,6 +57,18 @@ The first regression-tree live evaluation produced:
 This is evidence that the complexity gate is active rather than an assumption
 that a more complex model must improve every horizon.
 
+The leak-safe expanding-window registry reported:
+
+| Horizon | Scored forecasts | MAE | MASE | Directional accuracy | 80% coverage | Quantile loss |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 days | 155 | 0.078162 | 3.120279 | 52.26% | 63.20% | 0.027289 |
+| 20 days | 140 | 0.219011 | 8.854133 | 39.29% | 51.82% | 0.077188 |
+| 60 days | 100 | 0.300520 | 12.908352 | 35.00% | 52.86% | 0.106467 |
+
+All three nominal 80% intervals under-covered. GrainAgents now records three
+quality warnings and reduced the displayed confidence scores to 56.50, 30.12,
+and 28.31 respectively. These results support keeping publication blocked.
+
 ## Current limitations
 
 - The NWS layer samples one disclosed point per state and does not represent
@@ -62,8 +79,9 @@ that a more complex model must improve every horizon.
   are still missing, so weather remains `partial`.
 - Forecast models are currently price-only and do not yet ingest the official
   fundamental or weather features.
-- Rolling backtests estimate historical residual behavior but are not a
-  substitute for scoring forecasts saved before outcomes occur.
+- Rolling backtests are now leak-safe and auditable, but they are not a
+  substitute for scoring forecasts saved before outcomes occur. The current
+  interval calibration is materially inadequate.
 - The regression tree is deliberately small and price-only. Feature expansion
   should wait for vintage-safe fundamental and weather training panels.
 - EIA's public `DEMO_KEY` can return HTTP 429 after repeated test calls. Set a

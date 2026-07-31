@@ -232,6 +232,11 @@ def analyze(
     )
     quantitative_path = run_dir / "quantitative_forecast.json"
     write_json(quantitative_path, forecast_run.quantitative_forecast)
+    performance_path = run_dir / "forecast_performance.json"
+    write_json(
+        performance_path,
+        forecast_run.quantitative_forecast["performance_registry"],
+    )
     scenario_path = run_dir / "scenario_report.json"
     write_json(scenario_path, forecast_run.scenarios)
     official_archive_paths = write_official_archives(
@@ -252,6 +257,9 @@ def analyze(
             "market_dataset": run.primary_history["dataset"],
             "technical_methodology": payload["technical"]["methodology_version"],
             "forecast_methodology": payload["forecast"]["model_version"],
+            "forecast_performance_methodology": payload["forecast"][
+                "performance_registry"
+            ]["methodology_version"],
             "official_sources": [
                 source["dataset"]
                 for source in payload["sources"]
@@ -285,6 +293,7 @@ def analyze(
             "weather_report.md",
             "forecast_report.md",
             "quantitative_forecast.json",
+            "forecast_performance.json",
             "scenario_report.json",
             "source_audit.csv",
             *[

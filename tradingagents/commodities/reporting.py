@@ -323,6 +323,69 @@ def render_forecast_report(evidence: dict[str, Any]) -> str:
         for item in section["forecast_horizons"]
         for model_name, model in item["models"].items()
     )
+    performance_rows = "\n".join(
+        "| {horizon} | {observations} | {mae} | {mase} | {direction}% | "
+        "{coverage50}% | {coverage80}% | {quantile_loss} |".format(
+            horizon=item["horizon_trading_days"],
+            observations=item["rolling_point_in_time_performance"][
+                "evaluation_observations"
+            ],
+            mae=_number(
+                item["rolling_point_in_time_performance"]["mean_absolute_error"]
+            ),
+            mase=_number(
+                item["rolling_point_in_time_performance"][
+                    "mean_absolute_scaled_error"
+                ]
+            ),
+            direction=_number(
+                (
+                    item["rolling_point_in_time_performance"][
+                        "directional_accuracy"
+                    ]
+                    * 100
+                    if item["rolling_point_in_time_performance"][
+                        "directional_accuracy"
+                    ]
+                    is not None
+                    else None
+                ),
+                1,
+            ),
+            coverage50=_number(
+                (
+                    item["rolling_point_in_time_performance"][
+                        "interval_coverage_50"
+                    ]
+                    * 100
+                    if item["rolling_point_in_time_performance"][
+                        "interval_coverage_50"
+                    ]
+                    is not None
+                    else None
+                ),
+                1,
+            ),
+            coverage80=_number(
+                (
+                    item["rolling_point_in_time_performance"][
+                        "interval_coverage_80"
+                    ]
+                    * 100
+                    if item["rolling_point_in_time_performance"][
+                        "interval_coverage_80"
+                    ]
+                    is not None
+                    else None
+                ),
+                1,
+            ),
+            quantile_loss=_number(
+                item["rolling_point_in_time_performance"]["mean_quantile_loss"]
+            ),
+        )
+        for item in section["forecast_horizons"]
+    )
     scenarios = section["scenarios"]["probabilities"]
     return f"""# Validated quantitative forecast ensemble
 
@@ -354,6 +417,17 @@ The regression tree is admitted to the ensemble only when its rolling
 point-in-time MAE is strictly lower than every transparent baseline for that
 horizon. An ineligible tree remains visible with zero weight so a more complex
 model cannot silently degrade the forecast.
+
+## Expanding-window ensemble performance
+
+| Horizon | Scored forecasts | MAE | MASE | Directional accuracy | 50% coverage | 80% coverage | Quantile loss |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+{performance_rows}
+
+Each scored forecast uses only model errors already observable at that origin
+to select weights and tree eligibility. Interval coverage and quantile loss
+also use only residuals from earlier scored origins. Nominal 80% coverage below
+80% proportionally reduces the displayed forecast confidence score.
 
 These are price-only models evaluated with rolling historical residuals from
 the exact contract. They are research benchmarks, not trading recommendations

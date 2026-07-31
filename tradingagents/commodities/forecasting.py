@@ -10,7 +10,9 @@ from typing import Any
 from .evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 
 MODEL_VERSION = "validated-baseline-tree-ensemble-v2"
+PERFORMANCE_VERSION = "expanding-window-score-registry-v1"
 MINIMUM_TRAINING_BARS = 120
+PERFORMANCE_WARMUP = 30
 TREE_MODEL = "regression_tree"
 TREE_FEATURE_NAMES = (
     "price_change_1",
@@ -237,6 +239,22 @@ def _ensemble_eligibility(mae: dict[str, float]) -> dict[str, bool]:
     }
 
 
+def _ensemble_weights(mae: dict[str, float]) -> tuple[dict[str, float], dict[str, bool]]:
+    eligible = _ensemble_eligibility(mae)
+    inverse_mae = {
+        model: 1 / max(value, 1e-8) if eligible[model] else 0.0
+        for model, value in mae.items()
+    }
+    inverse_total = sum(inverse_mae.values())
+    return (
+        {
+            model: value / inverse_total
+            for model, value in inverse_mae.items()
+        },
+        eligible,
+    )
+
+
 def _weighted_quantile(
     values: list[tuple[float, float]],
     quantile: float,
@@ -250,6 +268,115 @@ def _weighted_quantile(
         if cumulative >= target:
             return value
     return ordered[-1][0]
+
+
+def _quantile(values: list[float], quantile: float) -> float:
+    return _weighted_quantile(
+        [(value, 1 / len(values)) for value in values],
+        quantile,
+    )
+
+
+def _quantile_loss(actual: float, predicted: float, quantile: float) -> float:
+    error = actual - predicted
+    return max(quantile * error, (quantile - 1) * error)
+
+
+def _rolling_performance(
+    validation_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    model_errors: dict[str, list[float]] = {}
+    ensemble_residuals: list[float] = []
+    absolute_errors: list[float] = []
+    scaled_errors: list[float] = []
+    direction_matches: list[bool] = []
+    coverage_50: list[bool] = []
+    coverage_80: list[bool] = []
+    quantile_losses: list[float] = []
+
+    for index, row in enumerate(validation_rows):
+        if index >= PERFORMANCE_WARMUP:
+            prior_mae = {
+                model: mean(abs(error) for error in errors)
+                for model, errors in model_errors.items()
+            }
+            weights, _eligible = _ensemble_weights(prior_mae)
+            point = sum(
+                row["predictions"][model] * weight
+                for model, weight in weights.items()
+            )
+            error = row["actual"] - point
+            absolute_errors.append(abs(error))
+            scaled_errors.append(abs(error) / max(row["naive_scale"], 1e-8))
+            predicted_direction = point - row["current_price"]
+            actual_direction = row["actual"] - row["current_price"]
+            direction_matches.append(
+                (predicted_direction > 0 and actual_direction > 0)
+                or (predicted_direction < 0 and actual_direction < 0)
+                or (predicted_direction == 0 and actual_direction == 0)
+            )
+
+            if len(ensemble_residuals) >= PERFORMANCE_WARMUP:
+                quantiles = {
+                    0.10: point + _quantile(ensemble_residuals, 0.10),
+                    0.25: point + _quantile(ensemble_residuals, 0.25),
+                    0.75: point + _quantile(ensemble_residuals, 0.75),
+                    0.90: point + _quantile(ensemble_residuals, 0.90),
+                }
+                coverage_50.append(
+                    quantiles[0.25] <= row["actual"] <= quantiles[0.75]
+                )
+                coverage_80.append(
+                    quantiles[0.10] <= row["actual"] <= quantiles[0.90]
+                )
+                quantile_losses.extend(
+                    _quantile_loss(row["actual"], prediction, quantile)
+                    for quantile, prediction in quantiles.items()
+                )
+            ensemble_residuals.append(error)
+
+        for model, prediction in row["predictions"].items():
+            model_errors.setdefault(model, []).append(row["actual"] - prediction)
+
+    return {
+        "methodology_version": PERFORMANCE_VERSION,
+        "weighting_policy": (
+            "At each scored origin, inverse-MAE weights and tree eligibility "
+            "use only model errors observed before that origin."
+        ),
+        "interval_policy": (
+            "At each interval-scored origin, quantiles use only earlier "
+            "point-in-time ensemble residuals."
+        ),
+        "warmup_observations": PERFORMANCE_WARMUP,
+        "evaluation_observations": len(absolute_errors),
+        "interval_evaluation_observations": len(coverage_80),
+        "mean_absolute_error": (
+            round(mean(absolute_errors), 6) if absolute_errors else None
+        ),
+        "mean_absolute_scaled_error": (
+            round(mean(scaled_errors), 6) if scaled_errors else None
+        ),
+        "directional_accuracy": (
+            round(sum(direction_matches) / len(direction_matches), 6)
+            if direction_matches
+            else None
+        ),
+        "interval_coverage_50": (
+            round(sum(coverage_50) / len(coverage_50), 6)
+            if coverage_50
+            else None
+        ),
+        "interval_coverage_80": (
+            round(sum(coverage_80) / len(coverage_80), 6)
+            if coverage_80
+            else None
+        ),
+        "mean_quantile_loss": (
+            round(mean(quantile_losses), 6) if quantile_losses else None
+        ),
+        "mase_scale": "mean absolute one-session price change available at origin",
+    }
 
 
 def _probability(
@@ -269,6 +396,7 @@ def _horizon_forecast(
     resistance: float | None,
 ) -> dict[str, Any]:
     residuals: dict[str, list[float]] = {}
+    validation_rows: list[dict[str, Any]] = []
     min_train = max(MINIMUM_TRAINING_BARS, horizon + 30)
     for origin in range(min_train, len(prices) - horizon):
         train = prices[:origin]
@@ -278,6 +406,17 @@ def _horizon_forecast(
         predictions[TREE_MODEL] = tree_prediction
         for model, prediction in predictions.items():
             residuals.setdefault(model, []).append(actual - prediction)
+        validation_rows.append(
+            {
+                "current_price": train[-1],
+                "actual": actual,
+                "predictions": predictions,
+                "naive_scale": mean(
+                    abs(train[index] - train[index - 1])
+                    for index in range(1, len(train))
+                ),
+            }
+        )
     if not residuals or any(not values for values in residuals.values()):
         raise ValueError(f"insufficient rolling validation for {horizon}-day forecast")
 
@@ -288,16 +427,7 @@ def _horizon_forecast(
         model: mean(abs(value) for value in model_residuals)
         for model, model_residuals in residuals.items()
     }
-    eligible = _ensemble_eligibility(mae)
-    inverse_mae = {
-        model: 1 / max(value, 1e-8) if eligible[model] else 0.0
-        for model, value in mae.items()
-    }
-    inverse_total = sum(inverse_mae.values())
-    weights = {
-        model: value / inverse_total
-        for model, value in inverse_mae.items()
-    }
+    weights, eligible = _ensemble_weights(mae)
     distribution = [
         (
             point_predictions[model] + residual,
@@ -347,6 +477,10 @@ def _horizon_forecast(
             - min(interval_width_percent, 50) * 0.6,
         ),
     )
+    rolling_performance = _rolling_performance(validation_rows)
+    observed_coverage_80 = rolling_performance["interval_coverage_80"]
+    if observed_coverage_80 is not None:
+        confidence *= min(1.0, observed_coverage_80 / 0.80)
     return {
         "horizon_trading_days": horizon,
         "current_price": round(current, 6),
@@ -375,6 +509,7 @@ def _horizon_forecast(
         "expected_maximum_adverse_excursion": round(mean(adverse), 6),
         "forecast_confidence_score": round(confidence, 2),
         "model_disagreement_score": round(disagreement_score, 2),
+        "rolling_point_in_time_performance": rolling_performance,
         "models": {
             model: {
                 "point_prediction": round(point_predictions[model], 6),
@@ -506,6 +641,19 @@ def build_quantitative_forecast(
         "price_unit": history["price_unit"],
         "training_observations": len(prices),
         "forecast_horizons": forecasts,
+        "performance_registry": {
+            "schema_version": "1.0",
+            "methodology_version": PERFORMANCE_VERSION,
+            "contract_symbol": base.instrument.symbol,
+            "as_of": base.as_of.isoformat(),
+            "horizons": [
+                {
+                    "horizon_trading_days": item["horizon_trading_days"],
+                    **item["rolling_point_in_time_performance"],
+                }
+                for item in forecasts
+            ],
+        },
         "scenarios": scenarios,
         "limitations": [
             "Price-only baseline and regression-tree candidates; official fundamentals and weather are not model features.",
@@ -562,6 +710,59 @@ def build_quantitative_forecast(
                     "derivation": MODEL_VERSION,
                 }
             )
+        performance = item["rolling_point_in_time_performance"]
+        for suffix, metric, value, unit in (
+            (
+                "rolling_mae",
+                "forecast_rolling_mean_absolute_error",
+                performance["mean_absolute_error"],
+                history["price_unit"],
+            ),
+            (
+                "rolling_mase",
+                "forecast_rolling_mean_absolute_scaled_error",
+                performance["mean_absolute_scaled_error"],
+                "ratio",
+            ),
+            (
+                "directional_accuracy",
+                "forecast_rolling_directional_accuracy",
+                performance["directional_accuracy"],
+                "proportion",
+            ),
+            (
+                "coverage_50",
+                "forecast_rolling_interval_coverage_50",
+                performance["interval_coverage_50"],
+                "proportion",
+            ),
+            (
+                "coverage_80",
+                "forecast_rolling_interval_coverage_80",
+                performance["interval_coverage_80"],
+                "proportion",
+            ),
+            (
+                "quantile_loss",
+                "forecast_rolling_mean_quantile_loss",
+                performance["mean_quantile_loss"],
+                history["price_unit"],
+            ),
+        ):
+            if value is None:
+                continue
+            facts.append(
+                {
+                    "fact_id": f"fact_forecast_{horizon}d_{suffix}",
+                    "metric": metric,
+                    "value": value,
+                    "unit": unit,
+                    "observed_at": base.as_of.date().isoformat(),
+                    "available_at": base.as_of.isoformat(),
+                    "source_id": source_id,
+                    "derivation": PERFORMANCE_VERSION,
+                }
+            )
     sources = list(base.sources)
     sources.append(
         {
@@ -578,12 +779,22 @@ def build_quantitative_forecast(
     missing = tuple(
         item for item in base.quality.missing_core_data if item != "forecast"
     )
+    warnings = list(base.quality.warnings)
+    for item in forecasts:
+        performance = item["rolling_point_in_time_performance"]
+        coverage = performance["interval_coverage_80"]
+        if coverage is not None and coverage < 0.70:
+            warnings.append(
+                f"{item['horizon_trading_days']}-day rolling 80% interval "
+                f"coverage is only {coverage:.1%}; forecast confidence was "
+                "penalized for under-coverage."
+            )
     quality = EvidenceQuality(
         status="forecast_baseline_ready_publication_blocked",
         missing_core_data=missing,
         stale_sources=base.quality.stale_sources,
         contradictions=base.quality.contradictions,
-        warnings=base.quality.warnings,
+        warnings=tuple(warnings),
     )
     evidence = replace(
         base,
@@ -602,5 +813,6 @@ def build_quantitative_forecast(
 __all__ = [
     "ForecastEvidenceRun",
     "MODEL_VERSION",
+    "PERFORMANCE_VERSION",
     "build_quantitative_forecast",
 ]

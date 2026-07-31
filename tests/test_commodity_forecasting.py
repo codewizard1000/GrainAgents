@@ -5,7 +5,10 @@ from datetime import date, timedelta
 import pytest
 
 from tradingagents.commodities.evidence import build_evidence_package
-from tradingagents.commodities.forecasting import build_quantitative_forecast
+from tradingagents.commodities.forecasting import (
+    _rolling_performance,
+    build_quantitative_forecast,
+)
 
 
 def _history(bar_count: int = 310) -> dict:
@@ -65,7 +68,44 @@ def test_forecast_ensemble_is_deterministic_and_distribution_constrained():
             model["validation_observations"] > 0
             for model in horizon["models"].values()
         )
+        performance = horizon["rolling_point_in_time_performance"]
+        assert performance["evaluation_observations"] > 0
+        assert performance["mean_absolute_error"] >= 0
+        assert performance["mean_absolute_scaled_error"] >= 0
+        assert 0 <= performance["directional_accuracy"] <= 1
+        if performance["interval_evaluation_observations"]:
+            assert 0 <= performance["interval_coverage_50"] <= 1
+            assert 0 <= performance["interval_coverage_80"] <= 1
+            assert performance["mean_quantile_loss"] >= 0
     assert first.scenarios["probability_total"] == 1
+    registry = first.quantitative_forecast["performance_registry"]
+    assert registry["methodology_version"] == (
+        "expanding-window-score-registry-v1"
+    )
+    assert len(registry["horizons"]) == 3
+    assert any(
+        fact["metric"] == "forecast_rolling_interval_coverage_80"
+        for fact in first.evidence.to_dict()["facts"]
+    )
+    undercovered = [
+        horizon
+        for horizon in first.quantitative_forecast["forecast_horizons"]
+        if (
+            horizon["rolling_point_in_time_performance"]["interval_coverage_80"]
+            is not None
+            and horizon["rolling_point_in_time_performance"][
+                "interval_coverage_80"
+            ]
+            < 0.70
+        )
+    ]
+    assert len(
+        [
+            warning
+            for warning in first.evidence.quality.warnings
+            if "under-coverage" in warning
+        ]
+    ) == len(undercovered)
     assert first.evidence.quality.status == "forecast_baseline_ready_publication_blocked"
     assert "forecast" not in first.evidence.quality.missing_core_data
 
@@ -79,3 +119,33 @@ def test_forecast_refuses_short_history():
     )
     with pytest.raises(ValueError, match="at least 200"):
         build_quantitative_forecast(base, history=_history(150))
+
+
+@pytest.mark.unit
+def test_rolling_score_does_not_use_current_outcome_to_select_weights():
+    prior_rows = [
+        {
+            "current_price": 0.0,
+            "actual": 0.0,
+            "predictions": {
+                "random_walk": 0.0,
+                "regression_tree": 1.0,
+            },
+            "naive_scale": 1.0,
+        }
+        for _ in range(30)
+    ]
+    current_row = {
+        "current_price": 0.0,
+        "actual": 0.0,
+        "predictions": {
+            "random_walk": 1_000_000.0,
+            "regression_tree": 0.0,
+        },
+        "naive_scale": 1.0,
+    }
+
+    performance = _rolling_performance([*prior_rows, current_row])
+
+    assert performance["evaluation_observations"] == 1
+    assert performance["mean_absolute_error"] == 1_000_000
