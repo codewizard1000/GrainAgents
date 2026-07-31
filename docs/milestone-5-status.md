@@ -22,6 +22,16 @@
   transportation, biofuel, ethanol-market-access, fertilizer, and grain-
   regulation title queries. Each record links to the official GPO PDF and
   receives a stable fact ID. The feed remains explicitly partial.
+- Added archived USDA Open Ag Transport weekly downbound corn barge movements
+  sourced from the U.S. Army Corps of Engineers. The aggregation uses
+  Mississippi Locks 27, Ohio Olmsted, and Arkansas Lock 1 to avoid counting
+  the same Mississippi traffic at sequential locks.
+- Added weekly, four-week-average, prior-year, and percentage-change barge
+  facts to the deterministic news report and newsletter. The copy explicitly
+  treats volume as a flow indicator rather than proof of a disruption or
+  directional price effect.
+- Added bounded FRED retries for timeouts, connection failures, HTTP 429, and
+  HTTP 500/502/503/504 responses. Other failures still fail immediately.
 - Added a separate `approve-publication` command. It refuses any run with a
   blocker and never performs external publication. For an unblocked run it
   records the human editor, timestamp, note, and SHA-256 of the exact approved
@@ -64,6 +74,16 @@ linked it from the run manifest, and wrote the genuine outcome registry. The
 registry correctly showed zero earlier vintages and zero matured outcomes,
 kept the forecast research-only, and excluded the current forecast from its
 own evaluation.
+The transportation rerun archived the USDA/USACE week ending July 25 with
+519,600 short tons of downbound corn traffic, a 455,162.5-ton four-week
+average, a 4.274533% weekly increase, and a 10.718091% annual increase. Seven
+stable facts were emitted and the 38,744-byte raw archive matched its recorded
+SHA-256. The same invocation encountered a FRED read timeout on all three
+bounded attempts, so macro observations remained unavailable and the existing
+macro blocker correctly reappeared rather than using stale or substituted
+values. The same rerun found one earlier current-model forecast vintage but
+still had zero matured horizon outcomes, as expected on the same market
+origin.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -73,6 +93,8 @@ Its current blockers are:
 - research-only forecast status
 - incomplete shipping, international-policy, and broader grain-news coverage
 - incomplete multi-year seasonal comparison
+- official macro observations unavailable on the latest rerun because FRED
+  exhausted its bounded timeout retries
 
 The live draft remains `publication_ready: false`.
 
@@ -118,17 +140,23 @@ comparison baseline.
 - Regulatory-event tests verify exact title filtering, next-day availability,
   historical-replay refusal, pipeline merging, unique event facts, and
   evidence-linked rendering.
+- Transportation tests verify non-overlapping lock aggregation, exact Socrata
+  update-time gating, prior-year comparison, historical-replay refusal,
+  pipeline merging, archive preservation, and cited publication rendering.
+- FRED reliability tests verify bounded retry and backoff after a transient
+  timeout.
 - CPC tests verify dated KMZ selection, KML polygon classification, intended-
   acreage weighting, historical-replay refusal, pipeline merging, and cited
   weather/newsletter rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 661 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 664 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
-- The news report contains official macro context and selected Federal Register
-  regulatory events. Black Sea shipping, river and port disruptions, broader
-  sanctions, China policy, and international crop estimates remain missing.
+- The news report contains official macro context, selected Federal Register
+  regulatory events, and weekly U.S. river-barge volume. Active lock closures,
+  river restrictions, port congestion, Black Sea shipping, broader sanctions,
+  China policy, and international crop estimates remain missing.
 - Change-from-prior-report cannot be calculated until an earlier approved
   publication exists.
 - A true multi-year seasonal comparison is not available; the current chart is
@@ -147,8 +175,9 @@ comparison baseline.
 
 ## Next publication slice
 
-- Add official shipping, river/port, sanctions, China-policy, and international
-  crop-estimate sources to broaden the partial grain-news layer.
+- Add active official lock/river/port notices, Black Sea shipping, sanctions,
+  China-policy, and international crop-estimate sources to broaden the partial
+  grain-news layer.
 - Add calibrated weather-risk and yield-impact evidence.
 - Apply the published USDA ERS monthly corn-yield equation only after the July
   point-in-time weather panel is complete, or develop and validate a distinct

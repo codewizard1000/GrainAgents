@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 import requests
@@ -25,6 +25,9 @@ from tradingagents.commodities.official.inspections import (
 from tradingagents.commodities.official.macro import load_grain_macro
 from tradingagents.commodities.official.models import OfficialSnapshot
 from tradingagents.commodities.official.pipeline import build_official_evidence
+from tradingagents.commodities.official.transportation import (
+    load_corn_barge_movements,
+)
 from tradingagents.commodities.official.wasde import (
     WasdeRelease,
     parse_corn_balance,
@@ -224,6 +227,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         eia_loader=None,
         fas_loader=None,
         inspections_loader=None,
+        transportation_loader=None,
         weather_loader=None,
         outlook_loader=None,
         crop_progress_loader=None,
@@ -287,6 +291,16 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
             "demand",
             "source_usda_ams_fgis_corn_inspections",
             {"status": "ready", "values": {"weekly_inspections": 275}},
+        ),
+        transportation_loader=snapshot_loader(
+            "transportation",
+            "source_usda_usace_corn_barge_movements",
+            {
+                "status": "ready",
+                "coverage_status": "partial",
+                "values": {"weekly_downbound_barge_tons": 519600},
+                "missing": ["active_lock_closure_notices"],
+            },
         ),
         weather_loader=snapshot_loader(
             "weather",
@@ -368,6 +382,11 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
     ] == "2026-14772"
     assert "official_grain_news_events" not in payload["macro"]["missing"]
     assert "black_sea_shipping" in payload["macro"]["missing"]
+    assert "river_and_port_disruptions" not in payload["macro"]["missing"]
+    assert "active_lock_closure_notices" in payload["macro"]["missing"]
+    assert payload["macro"]["transportation"]["values"][
+        "weekly_downbound_barge_tons"
+    ] == 519600
     assert payload["weather"]["outlook_8_14_day"]["issue_date"] == (
         "2026-07-30"
     )
@@ -529,6 +548,18 @@ class _MacroSession:
         return _MacroResponse(content)
 
 
+class _TransientMacroSession(_MacroSession):
+    def __init__(self):
+        super().__init__()
+        self.attempts = 0
+
+    def get(self, url: str, **kwargs):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise requests.ReadTimeout("fixture FRED timeout")
+        return super().get(url, **kwargs)
+
+
 @pytest.mark.unit
 def test_fred_macro_uses_conservative_rows_and_archives_public_csv():
     snapshot = load_grain_macro(
@@ -547,6 +578,24 @@ def test_fred_macro_uses_conservative_rows_and_archives_public_csv():
     assert len(snapshot.observations) == 4
     assert snapshot.source["api_key_mode"] == "not_required_public_csv"
     assert b"DTWEXBGS" in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_fred_macro_retries_transient_timeout_with_bounded_backoff():
+    session = _TransientMacroSession()
+    delays: list[float] = []
+
+    snapshot = load_grain_macro(
+        as_of=datetime(2026, 7, 31, 23, tzinfo=UTC),
+        today=date(2026, 7, 31),
+        session=session,
+        retrieved_at=datetime(2026, 7, 31, 23, 30, tzinfo=UTC),
+        sleep=delays.append,
+    )
+
+    assert snapshot.section["status"] == "ready"
+    assert session.attempts == 5
+    assert delays == [1]
 
 
 @pytest.mark.unit
@@ -852,6 +901,60 @@ def test_export_inspections_refuse_current_api_for_historical_replay():
             as_of=datetime(2026, 7, 29, 20, tzinfo=UTC),
             today=date(2026, 7, 30),
             session=_InspectionsSession(),
+        )
+
+
+class _TransportationSession:
+    def get(self, url: str, **_kwargs):
+        if "/api/views/" in url:
+            return _InspectionsResponse({"rowsUpdatedAt": 1785427745})
+        latest = date(2026, 7, 25)
+        tonnages = [519600, 498300, 443450, 359300]
+        rows = []
+        for index in range(53):
+            value = tonnages[index] if index < len(tonnages) else 450000
+            if index == 52:
+                value = 469300
+            rows.append(
+                {
+                    "date": (
+                        latest - timedelta(days=index * 7)
+                    ).isoformat(),
+                    "short_tons": str(value),
+                    "records": "3",
+                }
+            )
+        return _InspectionsResponse(rows)
+
+
+@pytest.mark.unit
+def test_corn_barge_movements_use_non_overlapping_gateways_and_update_time():
+    snapshot = load_corn_barge_movements(
+        as_of=datetime(2026, 7, 31, 20, tzinfo=UTC),
+        today=date(2026, 7, 31),
+        session=_TransportationSession(),
+        retrieved_at=datetime(2026, 7, 31, 21, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert values["week_ending"] == "2026-07-25"
+    assert values["weekly_downbound_barge_tons"] == 519600
+    assert values["four_week_average_downbound_barge_tons"] == 455162.5
+    assert values["same_week_prior_year_downbound_barge_tons"] == 469300
+    assert values["week_over_week_change_percent"] == pytest.approx(4.274533)
+    assert values["year_over_year_change_percent"] == pytest.approx(10.718091)
+    assert snapshot.source["rows_updated_at"] == "2026-07-30T16:09:05+00:00"
+    assert len(snapshot.observations) == 7
+    assert b"MS Locks 27" in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_corn_barge_movements_refuse_current_api_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_corn_barge_movements(
+            as_of=datetime(2026, 7, 30, 20, tzinfo=UTC),
+            today=date(2026, 7, 31),
+            session=_TransportationSession(),
         )
 
 

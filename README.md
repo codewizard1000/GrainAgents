@@ -16,7 +16,8 @@ publication.
 > current point-in-time USDA WASDE corn balance, CFTC corn positioning, and EIA
 > weekly ethanol demand proxies, USDA FAS weekly corn export sales, USDA
 > AMS/FGIS export inspections, official FRED macro context, and tightly
-> filtered Federal Register grain-policy events. It now adds production-
+> filtered Federal Register grain-policy events, plus USDA/USACE weekly
+> downbound corn barge movements. It now adds production-
 > weighted corn drought exposure, an acreage-weighted seven-day NWS sample
 > with fixed-station NCEI 1991-2020 temperature and precipitation anomalies,
 > a dated acreage-weighted CPC 8–14-day outlook, a USDA NASS corn-condition
@@ -24,8 +25,9 @@ publication.
 > condition-based monitoring index, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Calibrated weather-
-> risk and yield-impact estimates, live forecast scoring, and final publication
-> remain intentionally incomplete. The current corn run now produces a deterministic
+> risk and yield-impact estimates, sufficient matured live forecast scores,
+> and final publication remain intentionally incomplete. The current corn run
+> now produces a deterministic
 > evidence-linked newsletter draft with an explicit blocker and human-approval
 > gate.
 
@@ -69,6 +71,14 @@ accepts only exact configured query words in document titles, delays each
 published issue until the following morning, and links every event to its
 official GPO PDF. This is partial regulatory-event coverage, not a complete
 newswire or a directional interpretation of the events.
+
+Current corn runs also archive USDA Open Ag Transport weekly downbound barge
+movements supplied from the U.S. Army Corps of Engineers lock system. Corn
+traffic is summed only across Mississippi Locks 27, Ohio Olmsted, and Arkansas
+Lock 1, avoiding double-counting sequential Mississippi locks. The report
+shows weekly tonnage plus weekly, four-week, and annual comparisons. This is a
+flow indicator, not proof of a closure, delay, freight-rate shock, or price
+direction; active lock and port disruption notices remain incomplete.
 
 The corn publication draft includes local PNG charts for exact-contract price
 and moving averages, the futures curve, CFTC positioning, indexed contract

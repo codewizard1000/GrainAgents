@@ -148,9 +148,10 @@ def _publication_blockers(
             {
                 "code": "grain_news_coverage_incomplete",
                 "message": (
-                    "Federal regulatory events are connected, but shipping, "
-                    "international policy, and broader grain-news coverage "
-                    "remain incomplete."
+                    "Federal regulatory events and U.S. river-barge volume are "
+                    "connected, but active transport disruptions, shipping, "
+                    "international policy, and broader grain-news coverage remain "
+                    "incomplete."
                 ),
             }
         )
@@ -614,6 +615,77 @@ and not a trading or hedging recommendation.
 """
 
     macro_section = evidence.get("macro") or {}
+    transportation_section = macro_section.get("transportation") or {}
+    barge_tons = _find_optional_fact(
+        evidence,
+        "ams_corn_weekly_downbound_barge_tons",
+    )
+    barge_four_week_average = _find_optional_fact(
+        evidence,
+        "ams_corn_four_week_average_downbound_barge_tons",
+    )
+    barge_weekly_change = _find_optional_fact(
+        evidence,
+        "ams_corn_week_over_week_change_percent",
+    )
+    barge_yearly_change = _find_optional_fact(
+        evidence,
+        "ams_corn_year_over_year_change_percent",
+    )
+    if all(
+        fact is not None
+        for fact in (
+            barge_tons,
+            barge_four_week_average,
+            barge_weekly_change,
+            barge_yearly_change,
+        )
+    ):
+        assert barge_tons is not None
+        assert barge_four_week_average is not None
+        assert barge_weekly_change is not None
+        assert barge_yearly_change is not None
+        transportation_report = f"""## Official river-barge movement context
+
+| Metric | Week ending | Value | Evidence |
+|---|---|---:|---|
+| Downbound corn traffic | {barge_tons['observed_at']} | {_number(barge_tons['value'], 0)} short tons | {_citation(barge_tons)} |
+| Four-week average | {barge_four_week_average['observed_at']} | {_number(barge_four_week_average['value'], 1)} short tons | {_citation(barge_four_week_average)} |
+| Weekly change | {barge_weekly_change['observed_at']} | {_number(barge_weekly_change['value'], 2)}% | {_citation(barge_weekly_change)} |
+| Annual change | {barge_yearly_change['observed_at']} | {_number(barge_yearly_change['value'], 2)}% | {_citation(barge_yearly_change)} |
+
+This USDA/USACE measure sums corn traffic through Mississippi Locks 27, Ohio
+Olmsted, and Arkansas Lock 1 to avoid double-counting sequential Mississippi
+locks. Traffic volume is a logistics-flow indicator, not direct evidence of a
+closure, delay, freight-rate shock, or directional price effect.
+"""
+        transportation_newsletter = (
+            "USDA/USACE downbound corn barge traffic was "
+            f"{_number(barge_tons['value'], 0)} short tons "
+            f"{_citation(barge_tons)}, {_number(barge_weekly_change['value'], 2)}% "
+            f"from the prior week {_citation(barge_weekly_change)} and "
+            f"{_number(barge_yearly_change['value'], 2)}% from the comparable "
+            f"prior-year week {_citation(barge_yearly_change)}. Volume alone "
+            "does not establish a transportation disruption or price direction."
+        )
+    elif transportation_section.get("status") == "ready":
+        transportation_report = """## Official river-barge movement context
+
+The transportation feed was connected, but its cited corn metrics were
+unavailable.
+"""
+        transportation_newsletter = (
+            "The official river-barge feed was connected, but cited corn metrics "
+            "were unavailable."
+        )
+    else:
+        transportation_report = """## Official river-barge movement context — UNAVAILABLE
+
+USDA/USACE corn barge movement evidence is unavailable for this run.
+"""
+        transportation_newsletter = (
+            "Official USDA/USACE corn barge movement evidence is unavailable."
+        )
     events_section = macro_section.get("events") or {}
     event_rows = []
     recent_event_sentence = ""
@@ -667,9 +739,10 @@ The Federal Register grain-policy event feed is unavailable for this run.
     event_report += """
 
 This deterministic title filter covers selected trade, biofuel, fertilizer,
-grain-transportation, and grain-regulation releases. It does not yet provide
-complete Black Sea shipping, river and port, sanctions, China-policy, or
-international crop-estimate coverage.
+grain-transportation, and grain-regulation releases. Weekly U.S. river-barge
+volume is separately connected, but active lock and port disruptions, Black
+Sea shipping, sanctions, China policy, and international crop estimates remain
+incomplete.
 """
 
     macro_facts = (
@@ -708,6 +781,8 @@ These observations use FRED's public CSV feeds with a conservative seven-day
 availability buffer. They provide currency, energy, and rate context only.
 
 {event_report}
+
+{transportation_report}
 """
     else:
         macro_newsletter = "Official macro observations are unavailable."
@@ -716,8 +791,12 @@ availability buffer. They provide currency, energy, and rate context only.
 Official macro observations are unavailable.
 
 {event_report}
+
+{transportation_report}
 """
-    macro_newsletter = f"{macro_newsletter} {event_newsletter}"
+    macro_newsletter = (
+        f"{macro_newsletter} {transportation_newsletter} {event_newsletter}"
+    )
 
     blocker_lines = "\n".join(
         f"- `{blocker['code']}`: {blocker['message']}"

@@ -432,6 +432,7 @@ def analyze(
                     "NOAA Climate Prediction Center",
                     "USDA FAS",
                     "USDA AMS/FGIS",
+                    "USDA AMS / U.S. Army Corps of Engineers",
                     "Federal Reserve Bank of St. Louis",
                     "Office of the Federal Register / GPO",
                 }
@@ -446,6 +447,7 @@ def analyze(
             "technical",
             "official_macro_context",
             "official_regulatory_events",
+            "official_transportation_context",
         ],
         "research_depth": research_depth,
         "status": payload["quality"]["status"],

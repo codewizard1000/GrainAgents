@@ -298,6 +298,11 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
                 }
             ],
         },
+        "transportation": {
+            "status": "ready",
+            "coverage_status": "partial",
+            "values": {"weekly_downbound_barge_tons": 519600},
+        },
     }
     macro_facts = [
         _fact(
@@ -325,6 +330,26 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
             "federal_register_grain_event_2026_14772",
             "Notice of National Grain Car Council Meeting",
         ),
+        _fact(
+            "fact_ams_corn_weekly_downbound_barge_tons_2026_07_25",
+            "ams_corn_weekly_downbound_barge_tons",
+            519600,
+        ),
+        _fact(
+            "fact_ams_corn_four_week_average_downbound_barge_tons_2026_07_25",
+            "ams_corn_four_week_average_downbound_barge_tons",
+            455162.5,
+        ),
+        _fact(
+            "fact_ams_corn_week_over_week_change_percent_2026_07_25",
+            "ams_corn_week_over_week_change_percent",
+            4.274533,
+        ),
+        _fact(
+            "fact_ams_corn_year_over_year_change_percent_2026_07_25",
+            "ams_corn_year_over_year_change_percent",
+            10.718091,
+        ),
     ]
     for fact in macro_facts:
         fact["observed_at"] = "2026-07-23"
@@ -346,6 +371,12 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
     assert "Grain news and macro context — PARTIAL" in bundle.news_report
     assert "120.9075" in bundle.newsletter
     assert "Notice of National Grain Car Council Meeting" in bundle.news_report
+    assert "519,600 short tons" in bundle.newsletter
+    assert "Official river-barge movement context" in bundle.news_report
+    assert "Volume alone does not establish" in bundle.newsletter
+    assert "[fact_ams_corn_weekly_downbound_barge_tons_2026_07_25]" in (
+        bundle.news_report
+    )
     assert "[fact_federal_register_grain_event_2026_14772_2026_07_22]" in (
         bundle.newsletter
     )

@@ -6,6 +6,8 @@ import csv
 import hashlib
 import io
 import json
+import time as time_module
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -17,6 +19,8 @@ GRAPH_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 SOURCE_ID = "source_fred_grain_macro"
 NEW_YORK = ZoneInfo("America/New_York")
 LOOKBACK_DAYS = 45
+TRANSIENT_HTTP_STATUS = {429, 500, 502, 503, 504}
+MAX_REQUEST_ATTEMPTS = 3
 
 SERIES = {
     "broad_us_dollar_index": {
@@ -106,12 +110,62 @@ def _select_observation(
     return selected
 
 
+def _get_csv_with_retry(
+    client: requests.Session,
+    *,
+    series_id: str,
+    params: dict[str, str],
+    headers: dict[str, str],
+    sleep: Callable[[float], None],
+) -> str:
+    for attempt in range(MAX_REQUEST_ATTEMPTS):
+        try:
+            response = client.get(
+                GRAPH_CSV_URL,
+                params=params,
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.content.decode("utf-8-sig")
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt == MAX_REQUEST_ATTEMPTS - 1:
+                raise OfficialDataError(
+                    f"FRED {series_id} request failed: {exc}"
+                ) from exc
+            sleep(2**attempt)
+        except requests.HTTPError as exc:
+            status = (
+                exc.response.status_code
+                if exc.response is not None
+                else None
+            )
+            if (
+                status not in TRANSIENT_HTTP_STATUS
+                or attempt == MAX_REQUEST_ATTEMPTS - 1
+            ):
+                raise OfficialDataError(
+                    f"FRED {series_id} request failed: {exc}"
+                ) from exc
+            sleep(2**attempt)
+        except UnicodeDecodeError as exc:
+            raise OfficialDataError(
+                f"FRED {series_id} response was not UTF-8"
+            ) from exc
+        except requests.RequestException as exc:
+            raise OfficialDataError(
+                f"FRED {series_id} request failed: {exc}"
+            ) from exc
+    raise AssertionError("FRED retry loop exhausted without a result")
+
+
 def load_grain_macro(
     *,
     as_of: datetime,
     session: requests.Session | None = None,
     retrieved_at: datetime | None = None,
     today: date | None = None,
+    sleep: Callable[[float], None] | None = None,
 ) -> OfficialSnapshot:
     """Load current macro context and refuse non-vintage-safe historical runs."""
     current_date = today or date.today()
@@ -123,26 +177,23 @@ def load_grain_macro(
 
     client = session or requests.Session()
     headers = {"User-Agent": "GrainAgents/1.0 research@example.invalid"}
+    retry_sleep = sleep or time_module.sleep
     start_date = as_of.date() - timedelta(days=LOOKBACK_DAYS)
     payloads: dict[str, str] = {}
     selected: dict[str, tuple[date, float, datetime]] = {}
     for key, definition in SERIES.items():
         series_id = definition["series_id"]
-        try:
-            response = client.get(
-                GRAPH_CSV_URL,
-                params={
-                    "id": series_id,
-                    "cosd": start_date.isoformat(),
-                    "coed": as_of.date().isoformat(),
-                },
-                headers=headers,
-                timeout=30,
-            )
-            response.raise_for_status()
-            content = response.content.decode("utf-8-sig")
-        except (requests.RequestException, UnicodeDecodeError) as exc:
-            raise OfficialDataError(f"FRED {series_id} request failed: {exc}") from exc
+        content = _get_csv_with_retry(
+            client,
+            series_id=series_id,
+            params={
+                "id": series_id,
+                "cosd": start_date.isoformat(),
+                "coed": as_of.date().isoformat(),
+            },
+            headers=headers,
+            sleep=retry_sleep,
+        )
         payloads[series_id] = content
         selected[key] = _select_observation(
             content,
