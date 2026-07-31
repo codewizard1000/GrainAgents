@@ -468,7 +468,7 @@ def _weather_drought(
             for level in range(5)
         ],
         sha256=digest,
-        limitation="Weather anomalies, 14-day forecasts, and yield impact are missing.",
+        limitation="Calibrated weather-risk and yield-impact estimates are missing.",
     )
 
 

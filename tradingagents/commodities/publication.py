@@ -342,6 +342,29 @@ def build_publication_bundle(
         evidence,
         "corn_weather_sample_weighted_7_day_precipitation_mm",
     )
+    temperature_anomaly = _find_optional_fact(
+        evidence,
+        "corn_weather_sample_weighted_7_day_temperature_anomaly_c",
+    )
+    precipitation_anomaly = _find_optional_fact(
+        evidence,
+        "corn_weather_sample_weighted_7_day_precipitation_anomaly_mm",
+    )
+    if temperature_anomaly is not None and precipitation_anomaly is not None:
+        weather_anomaly_text = (
+            "Against fixed nearby-station NCEI 1991-2020 daily normals, the "
+            "sample-weighted seven-day temperature anomaly is "
+            f"{_number(temperature_anomaly['value'], 1)} C "
+            f"{_citation(temperature_anomaly)} and the precipitation anomaly "
+            f"is {_number(precipitation_anomaly['value'], 1)} mm "
+            f"{_citation(precipitation_anomaly)}. Calibrated yield impact and "
+            "a complete weather-risk score remain missing."
+        )
+    else:
+        weather_anomaly_text = (
+            "Temperature and rainfall anomalies, calibrated yield impact, "
+            "and a complete weather-risk score remain missing."
+        )
     weather_outlook = (evidence.get("weather") or {}).get("outlook_8_14_day")
     if weather_outlook:
         outlook_period = (
@@ -820,9 +843,7 @@ WASDE production is {_number(production["value"], 0)} million bushels
 Moderate drought or worse covers {_number(drought["value"], 1)}% of corn area
 {_citation(drought)}. The acreage-sample-weighted seven-day precipitation
 forecast is {_number(precipitation["value"], 1)} mm
-{_citation(precipitation)}. {extended_weather_text} Temperature and rainfall
-anomalies, calibrated yield impact, and a complete weather-risk score remain
-missing.
+{_citation(precipitation)}. {extended_weather_text} {weather_anomaly_text}
 {weather_chart}
 
 ## Export and domestic demand

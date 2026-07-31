@@ -389,8 +389,18 @@ def render_weather_report(evidence: dict[str, Any]) -> str:
     if not section:
         return "# Weather and drought\n\nWeather evidence was unavailable.\n"
     values = section["values"]
+    if "drought_valid_date" not in values:
+        return (
+            "# Corn weather and drought\n\n"
+            "The seven-day weather and drought snapshot was unavailable; "
+            "review the evidence quality warnings.\n"
+        )
     drought_period = values["drought_valid_date"]
     as_of_period = evidence["as_of"][:10]
+    forecast_period = (
+        f"{values['seven_day_forecast_valid_start']}/"
+        f"{values['seven_day_forecast_valid_end']}"
+    )
     missing = ", ".join(section["missing"])
     outlook = section.get("outlook_8_14_day")
     if outlook:
@@ -435,9 +445,13 @@ the same twelve transparent Corn Belt points used by the seven-day layer.
 | Corn area in moderate drought or worse (D1-D4) | {_number(values["d1_or_worse_percent"], 1)}% | {_official_fact("corn_drought_d1_or_worse_percent", drought_period)} |
 | Corn area in severe drought or worse (D2-D4) | {_number(values["d2_or_worse_percent"], 1)}% | {_official_fact("corn_drought_d2_or_worse_percent", drought_period)} |
 | Corn area in extreme drought or worse (D3-D4) | {_number(values["d3_or_worse_percent"], 1)}% | {_official_fact("corn_drought_d3_or_worse_percent", drought_period)} |
-| Sample-weighted 7-day precipitation | {_number(values["sample_weighted_7_day_precipitation_mm"], 1)} mm | {_official_fact("corn_weather_sample_weighted_7_day_precipitation_mm", as_of_period)} |
-| Sample-weighted 7-day mean temperature | {_number(values["sample_weighted_7_day_mean_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_mean_temperature_c", as_of_period)} |
-| Sample-weighted 7-day maximum temperature | {_number(values["sample_weighted_7_day_maximum_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_maximum_temperature_c", as_of_period)} |
+| Sample-weighted 7-day precipitation | {_number(values["sample_weighted_7_day_precipitation_mm"], 1)} mm | {_official_fact("corn_weather_sample_weighted_7_day_precipitation_mm", forecast_period)} |
+| Sample-weighted 7-day precipitation normal (1991-2020) | {_number(values["sample_weighted_7_day_normal_precipitation_mm"], 1)} mm | {_official_fact("corn_weather_sample_weighted_7_day_normal_precipitation_mm", forecast_period)} |
+| Sample-weighted 7-day precipitation anomaly | {_number(values["sample_weighted_7_day_precipitation_anomaly_mm"], 1)} mm | {_official_fact("corn_weather_sample_weighted_7_day_precipitation_anomaly_mm", forecast_period)} |
+| Sample-weighted 7-day mean temperature | {_number(values["sample_weighted_7_day_mean_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_mean_temperature_c", forecast_period)} |
+| Sample-weighted 7-day mean-temperature normal (1991-2020) | {_number(values["sample_weighted_7_day_normal_mean_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_normal_mean_temperature_c", forecast_period)} |
+| Sample-weighted 7-day temperature anomaly | {_number(values["sample_weighted_7_day_temperature_anomaly_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_temperature_anomaly_c", forecast_period)} |
+| Sample-weighted 7-day maximum temperature | {_number(values["sample_weighted_7_day_maximum_temperature_c"], 1)} C | {_official_fact("corn_weather_sample_weighted_7_day_maximum_temperature_c", forecast_period)} |
 | Sample coverage of intended corn acres | {_number(values["sample_coverage_percent_of_intended_acres"], 1)}% | {_official_fact("corn_weather_sample_coverage_percent_of_intended_acres", as_of_period)} |
 
 This is useful current context, but it is not yet a complete weather-and-yield

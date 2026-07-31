@@ -895,8 +895,14 @@ def test_cpc_outlook_uses_dated_archive_and_acreage_weighted_categories():
                     "d2_or_worse_percent": 20,
                     "d3_or_worse_percent": 6,
                     "sample_weighted_7_day_precipitation_mm": 30,
+                    "sample_weighted_7_day_normal_precipitation_mm": 18,
+                    "sample_weighted_7_day_precipitation_anomaly_mm": 12,
                     "sample_weighted_7_day_mean_temperature_c": 25,
+                    "sample_weighted_7_day_normal_mean_temperature_c": 20,
+                    "sample_weighted_7_day_temperature_anomaly_c": 5,
                     "sample_weighted_7_day_maximum_temperature_c": 31,
+                    "seven_day_forecast_valid_start": "2026-07-31",
+                    "seven_day_forecast_valid_end": "2026-08-06",
                     "sample_coverage_percent_of_intended_acres": 85,
                 },
                 "missing": ["yield_impact_range"],
@@ -940,16 +946,34 @@ class _WeatherSession:
                     }
                 }
             )
+        if "normals-daily/1991-2020" in url:
+            station = url.rsplit("/", 1)[-1].removesuffix(".csv")
+            rows = [
+                "STATION,DATE,NAME,hour,DLY-TAVG-NORMAL,MTD-PRCP-NORMAL",
+                f"{station},07-29,Fixture Station,99,68.0,2.9",
+                f"{station},07-30,Fixture Station,99,68.0,3.0",
+                f"{station},07-31,Fixture Station,99,68.0,3.1",
+                f"{station},08-01,Fixture Station,99,68.0,0.1",
+                f"{station},08-02,Fixture Station,99,68.0,0.2",
+                f"{station},08-03,Fixture Station,99,68.0,0.3",
+                f"{station},08-04,Fixture Station,99,68.0,0.4",
+                f"{station},08-05,Fixture Station,99,68.0,0.5",
+            ]
+            return _WeatherResponse(content=("\n".join(rows) + "\n").encode())
         return _WeatherResponse(
             payload={
                 "properties": {
                     "updateTime": "2026-07-30T12:00:00+00:00",
-                    "validTimes": "2026-07-30T12:00:00+00:00/P7D",
+                    "validTimes": "2026-07-30T12:00:00+00:00/P7DT20H",
                     "temperature": {
                         "values": [
                             {
                                 "validTime": "2026-07-30T12:00:00+00:00/P7D",
                                 "value": 25,
+                            },
+                            {
+                                "validTime": "2026-08-06T12:00:00+00:00/PT20H",
+                                "value": 35,
                             }
                         ]
                     },
@@ -958,6 +982,10 @@ class _WeatherSession:
                             {
                                 "validTime": "2026-07-30T12:00:00+00:00/P7D",
                                 "value": 30,
+                            },
+                            {
+                                "validTime": "2026-08-06T12:00:00+00:00/PT20H",
+                                "value": 5,
                             }
                         ]
                     },
@@ -980,8 +1008,16 @@ def test_weather_snapshot_uses_production_weighted_drought_and_acreage_sample():
     assert values["d1_or_worse_percent"] == 39
     assert values["sample_weighted_7_day_precipitation_mm"] == 30
     assert values["sample_weighted_7_day_mean_temperature_c"] == 25
+    assert values["sample_weighted_7_day_maximum_temperature_c"] == 25
+    assert values["sample_weighted_7_day_normal_precipitation_mm"] == 17.78
+    assert values["sample_weighted_7_day_normal_mean_temperature_c"] == 20
+    assert values["sample_weighted_7_day_precipitation_anomaly_mm"] == 12.22
+    assert values["sample_weighted_7_day_temperature_anomaly_c"] == 5
+    assert "production_weighted_rainfall_anomaly" not in snapshot.section["missing"]
+    assert "production_weighted_temperature_anomaly" not in snapshot.section["missing"]
     assert 80 < values["sample_coverage_percent_of_intended_acres"] < 90
-    assert len(snapshot.observations) == 9
+    assert len(snapshot.observations) == 13
+    assert b"ncei_daily_normals_csv" in snapshot.raw_content
 
 
 @pytest.mark.unit
@@ -992,3 +1028,18 @@ def test_weather_current_endpoints_are_refused_for_historical_replay():
             today=date(2026, 7, 30),
             session=_WeatherSession(),
         )
+
+
+@pytest.mark.unit
+def test_weather_report_handles_missing_base_snapshot():
+    report = render_weather_report(
+        {
+            "weather": {
+                "status": "partial",
+                "values": {},
+                "outlook_8_14_day": {"status": "ready"},
+            }
+        }
+    )
+
+    assert "seven-day weather and drought snapshot was unavailable" in report

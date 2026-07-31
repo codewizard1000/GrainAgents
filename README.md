@@ -17,12 +17,13 @@ publication.
 > weekly ethanol demand proxies, USDA FAS weekly corn export sales, USDA
 > AMS/FGIS export inspections, official FRED macro context, and tightly
 > filtered Federal Register grain-policy events. It now adds production-
-> weighted corn drought exposure, an acreage-weighted seven-day NWS sample,
+> weighted corn drought exposure, an acreage-weighted seven-day NWS sample
+> with fixed-station NCEI 1991-2020 temperature and precipitation anomalies,
 > a dated acreage-weighted CPC 8–14-day outlook, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
-> when it beats every transparent baseline out of sample. Weather anomalies,
-> calibrated live forecast scoring, and final publication remain intentionally
-> incomplete. The current corn run now produces a deterministic
+> when it beats every transparent baseline out of sample. Calibrated weather-
+> risk and yield-impact estimates, live forecast scoring, and final publication
+> remain intentionally incomplete. The current corn run now produces a deterministic
 > evidence-linked newsletter draft with an explicit blocker and human-approval
 > gate.
 
@@ -50,9 +51,10 @@ reports, quantitative forecast, leak-safe rolling performance, and scenario
 JSON, a blocked newsletter/final-outlook/risk bundle, and a CSV source audit.
 For a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
-The run remains `publication_ready: false` until complete weather anomalies,
-out-of-sample forecast scoring, grain-news event evidence, market-data
-publication rights, and editorial approval are implemented. Current corn runs
+The run remains `publication_ready: false` until calibrated weather-risk and
+yield-impact estimates, out-of-sample forecast scoring, broader grain-news
+evidence, market-data publication rights, and editorial approval are
+implemented. Current corn runs
 include archived FRED context for the broad U.S. dollar, WTI crude oil, the
 10-year Treasury yield, and the effective federal funds rate. The public CSV
 adapter requires no FRED key, refuses historical replay, and conservatively
@@ -79,6 +81,14 @@ the 8–14-day temperature and precipitation outlook. CPC probability polygons
 are classified at the same twelve disclosed Corn Belt points and weighted by
 USDA 2026 intended corn acres. These are category probabilities relative to
 climatology, not forecasts of temperature or rainfall magnitude.
+
+The seven-day layer also archives NOAA NCEI 1991-2020 daily-normal CSVs for
+one fixed, disclosed station near each state sample point. It compares the
+same seven calendar dates with the NWS grid forecast, derives daily
+precipitation normals from changes in NCEI month-to-date normals, and then
+weights station-level temperature and precipitation anomalies by USDA 2026
+intended corn acres. This is an auditable acreage sample, not a calibrated
+field-level yield model.
 
 For internal testing with Databento, set these values in the ignored `.env`
 file:

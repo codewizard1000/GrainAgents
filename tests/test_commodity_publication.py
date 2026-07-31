@@ -394,3 +394,34 @@ def test_publication_renders_cpc_8_14_day_outlook_facts():
         "above_normal_acre_share_2026_08_07_2026_08_13]"
         in bundle.newsletter
     )
+
+
+@pytest.mark.unit
+def test_publication_renders_seven_day_weather_anomalies():
+    evidence = _evidence()
+    evidence["facts"].extend(
+        [
+            _fact(
+                "fact_corn_weather_temperature_anomaly",
+                "corn_weather_sample_weighted_7_day_temperature_anomaly_c",
+                2.4,
+            ),
+            _fact(
+                "fact_corn_weather_precipitation_anomaly",
+                "corn_weather_sample_weighted_7_day_precipitation_anomaly_mm",
+                -8.3,
+            ),
+        ]
+    )
+
+    bundle = build_publication_bundle(
+        evidence,
+        quantitative=_quantitative(),
+        scenarios=_scenarios(),
+    )
+
+    assert "NCEI 1991-2020 daily normals" in bundle.newsletter
+    assert "temperature anomaly is 2.4 C" in bundle.newsletter
+    assert "precipitation anomaly is -8.3 mm" in bundle.newsletter
+    assert "[fact_corn_weather_temperature_anomaly]" in bundle.newsletter
+    assert "Temperature and rainfall anomalies" not in bundle.newsletter

@@ -46,6 +46,10 @@ archived 11 matched Federal Register documents and rendered 11 unique event
 facts without assigning directional market impact.
 The same run archived the dated July 30 CPC 8-14 day outlook, produced eight
 weather-outlook facts, and removed `14_day_forecast` from the weather gaps.
+It also archived twelve NOAA NCEI 1991-2020 daily-normal station files and
+produced cited seven-day temperature and precipitation normal and anomaly
+facts. For July 31-August 6, forecast precipitation was 6.116 mm above the
+sample-weighted normal and forecast mean temperature was 1.237 C below it.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -104,7 +108,7 @@ comparison baseline.
   acreage weighting, historical-replay refusal, pipeline merging, and cited
   weather/newsletter rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 650 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 652 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
@@ -117,9 +121,9 @@ comparison baseline.
   an explicitly labelled indexed exact-contract history.
 - Scenario-probability change cannot be plotted until an approved prior report
   exists.
-- Weather anomaly magnitudes, calibrated weather risk, and yield impact remain
-  missing. The CPC 8-14 day probability layer, export sales, and export
-  inspections are connected for current runs.
+- Calibrated weather risk and yield impact remain missing. Sample-weighted
+  seven-day anomaly magnitudes, the CPC 8-14 day probability layer, export
+  sales, and export inspections are connected for current runs.
 - The current Databento/exchange license scope is internal testing only, so
   publication must remain blocked regardless of editorial approval.
 - Soybean and wheat publication renderers are not implemented in this slice.
@@ -128,5 +132,5 @@ comparison baseline.
 
 - Add official shipping, river/port, sanctions, China-policy, and international
   crop-estimate sources to broaden the partial grain-news layer.
-- Complete weather anomaly magnitudes and yield-impact evidence.
+- Add calibrated weather-risk and yield-impact evidence.
 - Start saving forecast vintages for genuine future-outcome scoring.

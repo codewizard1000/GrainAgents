@@ -6,6 +6,10 @@
   NASS/U.S. Drought Monitor overlay.
 - Added a twelve-state National Weather Service seven-day point sample,
   weighted by USDA NASS 2026 intended corn acres.
+- Added fixed nearby-station NOAA NCEI 1991-2020 daily temperature and
+  precipitation normals for the same seven calendar dates, then computed
+  intended-acreage-weighted sample anomalies. Daily precipitation normals are
+  derived from consecutive month-to-date normal values.
 - Added dated NOAA CPC 8-14 day temperature and precipitation GIS archives,
   classified at the same twelve points and weighted by intended corn acres.
   Mutable `latest` files are not used.
@@ -46,6 +50,15 @@ On 2026-07-30, the official weather adapter returned:
 - 28.378 mm acreage-sample-weighted seven-day precipitation
 - 23.229 C acreage-sample-weighted seven-day mean temperature
 - 82.968% coverage of USDA's intended 2026 corn acres
+
+After adding NCEI daily normals, the verified July 31-August 6 run returned:
+
+- 27.497 mm sample-weighted forecast precipitation versus a 21.381 mm normal,
+  a +6.116 mm anomaly
+- 22.690 C sample-weighted forecast mean temperature versus a 23.927 C normal,
+  a -1.237 C anomaly
+- 13,022,339 bytes in the exact weather archive, including all twelve NCEI
+  station CSV files
 
 The July 30 CPC issue, valid August 7-13, placed 100% of sampled intended corn
 acres in an above-normal temperature category. For precipitation, 86.03% fell
@@ -94,11 +107,11 @@ where the range is wide or observed coverage is below nominal.
 
 - The NWS layer samples one disclosed point per state and does not represent
   within-state spatial variation.
-- Production-weighted rainfall and temperature anomalies need a vintage-safe
-  1991-2020 normal and observation pipeline.
+- The anomaly layer uses one fixed nearby airport station per state sample and
+  intended-acreage weights; it is not a gridded, production-weighted field
+  climatology and does not capture within-state variation.
 - A calibrated weather risk score and yield-impact range are still missing, so
-  weather remains `partial`. CPC category probabilities do not supply anomaly
-  magnitude.
+  weather remains `partial`.
 - Forecast models are currently price-only and do not yet ingest the official
   fundamental or weather features.
 - Rolling backtests are now leak-safe and auditable, but they are not a
