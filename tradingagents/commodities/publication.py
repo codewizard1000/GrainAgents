@@ -123,11 +123,23 @@ def _publication_blockers(
                 ),
             }
         )
-    if not evidence.get("macro"):
+    macro = evidence.get("macro") or {}
+    if macro.get("status") != "ready":
         blockers.append(
             {
-                "code": "news_macro_not_implemented",
-                "message": "The grain-news and macro evidence section is unavailable.",
+                "code": "macro_evidence_unavailable",
+                "message": "Official currency, energy, and rate context is unavailable.",
+            }
+        )
+    if (
+        not macro
+        or "official_grain_news_events"
+        in macro.get("missing", ["official_grain_news_events"])
+    ):
+        blockers.append(
+            {
+                "code": "grain_news_not_implemented",
+                "message": "An official-source grain-news event feed is unavailable.",
             }
         )
     demand = evidence.get("demand") or {}
@@ -320,6 +332,22 @@ def build_publication_bundle(
     )
     noncommercial_net = _find_fact(evidence, "cftc_corn_noncommercial_net")
     first_notice = _find_fact(evidence, "first_notice_date")
+    broad_dollar = _find_optional_fact(
+        evidence,
+        "fred_broad_us_dollar_index",
+    )
+    wti_crude = _find_optional_fact(
+        evidence,
+        "fred_wti_crude_oil_usd_per_barrel",
+    )
+    treasury_10y = _find_optional_fact(
+        evidence,
+        "fred_10y_treasury_percent",
+    )
+    effective_fed_funds = _find_optional_fact(
+        evidence,
+        "fred_effective_federal_funds_rate_percent",
+    )
     forecast_median = _find_fact(
         evidence,
         "forecast_median_projected_price",
@@ -470,11 +498,54 @@ and not a trading or hedging recommendation.
   blocker remains.
 """
 
-    news_report = """# Grain news and macro — UNAVAILABLE
+    macro_facts = (
+        broad_dollar,
+        wti_crude,
+        treasury_10y,
+        effective_fed_funds,
+    )
+    if all(fact is not None for fact in macro_facts):
+        assert broad_dollar is not None
+        assert wti_crude is not None
+        assert treasury_10y is not None
+        assert effective_fed_funds is not None
+        macro_newsletter = (
+            "The broad U.S. dollar index is "
+            f"{_number(broad_dollar['value'], 4)} {_citation(broad_dollar)}, "
+            f"WTI crude is ${_number(wti_crude['value'], 2)} per barrel "
+            f"{_citation(wti_crude)}, the 10-year Treasury yield is "
+            f"{_number(treasury_10y['value'], 2)}% {_citation(treasury_10y)}, "
+            "and the effective federal funds rate is "
+            f"{_number(effective_fed_funds['value'], 2)}% "
+            f"{_citation(effective_fed_funds)}."
+        )
+        news_report = f"""# Grain news and macro context — PARTIAL
 
-The official-source grain-news and macro analyst is not implemented in this
-run. No headlines, sentiment scores, or event claims are inferred or
-fabricated. This missing section is a publication blocker.
+## Official macro observations
+
+| Metric | Observation date | Value | Evidence |
+|---|---|---:|---|
+| Broad U.S. dollar index | {broad_dollar['observed_at']} | {_number(broad_dollar['value'], 4)} | {_citation(broad_dollar)} |
+| WTI crude oil | {wti_crude['observed_at']} | ${_number(wti_crude['value'], 2)}/barrel | {_citation(wti_crude)} |
+| 10-year Treasury yield | {treasury_10y['observed_at']} | {_number(treasury_10y['value'], 2)}% | {_citation(treasury_10y)} |
+| Effective federal funds rate | {effective_fed_funds['observed_at']} | {_number(effective_fed_funds['value'], 2)}% | {_citation(effective_fed_funds)} |
+
+These observations use FRED's public CSV feeds with a conservative seven-day
+availability buffer. They provide currency, energy, and rate context only.
+
+## Missing event coverage
+
+The official-source grain-news event feed is not implemented. No tariff,
+shipping, policy, sanctions, fertilizer, or China-policy event claim is
+inferred or fabricated. Missing event coverage remains a publication blocker.
+"""
+    else:
+        macro_newsletter = "Official macro observations are unavailable."
+        news_report = """# Grain news and macro — UNAVAILABLE
+
+Official macro observations and the official-source grain-news event feed are
+unavailable. No headlines, sentiment scores, or event claims are inferred or
+fabricated. The missing evidence remains a publication blocker.
 """
 
     blocker_lines = "\n".join(
@@ -567,11 +638,11 @@ changed by {_number(changes["scenario_probability_bull"] * 100, 1)},
         )
     export_sales_text = " ".join(export_parts)
     export_gap_text = (
-        "missing news evidence"
+        "missing grain-news event evidence"
         if weekly_exports is not None and weekly_inspections is not None
-        else "missing export-inspection and news evidence"
+        else "missing export-inspection and grain-news event evidence"
         if weekly_exports is not None
-        else "missing export and news evidence"
+        else "missing export and grain-news event evidence"
     )
     newsletter = f"""# DRAFT — NOT APPROVED FOR PUBLICATION
 
@@ -663,6 +734,13 @@ The all-month legacy CFTC noncommercial net position is
 {_citation(noncommercial_net)}.
 {positioning_chart}
 
+## Macro context
+
+{macro_newsletter}
+
+These values are contextual observations, not causal claims about corn prices.
+Official grain-news event coverage remains incomplete.
+
 ## Bull, base, and bear cases
 
 The bull, base, and bear probabilities are
@@ -700,7 +778,7 @@ marketing, trading, or hedging advice.
 
     fact_ids = {fact["fact_id"] for fact in evidence["facts"]}
     _validate_references(
-        (newsletter, bull_bear, risk_report),
+        (newsletter, bull_bear, risk_report, news_report),
         fact_ids=fact_ids,
         output_ids=output_ids,
     )

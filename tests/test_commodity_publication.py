@@ -274,3 +274,56 @@ def test_publication_clears_export_blockers_when_both_feeds_are_ready():
     assert "export_inspections_not_implemented" not in blocker_codes
     assert "1,488,028 metric tons" in bundle.newsletter
     assert "[fact_ams_corn_weekly_inspections_2026_07_23]" in bundle.newsletter
+
+
+@pytest.mark.unit
+def test_publication_renders_macro_and_retains_only_grain_news_blocker():
+    evidence = _evidence()
+    evidence["macro"] = {
+        "status": "ready",
+        "coverage_status": "partial",
+        "missing": ["official_grain_news_events"],
+    }
+    macro_facts = [
+        _fact(
+            "fact_fred_broad_us_dollar_index_2026_07_23",
+            "fred_broad_us_dollar_index",
+            120.9075,
+        ),
+        _fact(
+            "fact_fred_wti_crude_oil_usd_per_barrel_2026_07_23",
+            "fred_wti_crude_oil_usd_per_barrel",
+            93.08,
+        ),
+        _fact(
+            "fact_fred_10y_treasury_percent_2026_07_23",
+            "fred_10y_treasury_percent",
+            4.71,
+        ),
+        _fact(
+            "fact_fred_effective_federal_funds_rate_percent_2026_07_23",
+            "fred_effective_federal_funds_rate_percent",
+            3.63,
+        ),
+    ]
+    for fact in macro_facts:
+        fact["observed_at"] = "2026-07-23"
+    evidence["facts"].extend(macro_facts)
+
+    bundle = build_publication_bundle(
+        evidence,
+        quantitative=_quantitative(),
+        scenarios=_scenarios(),
+    )
+    blocker_codes = {
+        blocker["code"]
+        for blocker in bundle.publication_status["blockers"]
+    }
+
+    assert "macro_evidence_unavailable" not in blocker_codes
+    assert "grain_news_not_implemented" in blocker_codes
+    assert "Grain news and macro context — PARTIAL" in bundle.news_report
+    assert "120.9075" in bundle.newsletter
+    assert "[fact_fred_wti_crude_oil_usd_per_barrel_2026_07_23]" in (
+        bundle.news_report
+    )

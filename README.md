@@ -14,8 +14,9 @@ publication.
 > volume, open interest, and instrument definitions. The `analyze` command now
 > builds deterministic technical evidence, a five-contract futures curve, the
 > current point-in-time USDA WASDE corn balance, CFTC corn positioning, and EIA
-> weekly ethanol demand proxies and USDA FAS weekly corn export sales. It now
-> adds production-weighted corn drought
+> weekly ethanol demand proxies, USDA FAS weekly corn export sales, USDA
+> AMS/FGIS export inspections, and official FRED macro context. It now adds
+> production-weighted corn drought
 > exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Weather anomalies,
@@ -49,8 +50,12 @@ JSON, a blocked newsletter/final-outlook/risk bundle, and a CSV source audit.
 For a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
 The run remains `publication_ready: false` until complete weather anomalies,
-out-of-sample forecast scoring, news/macro evidence, market-data publication
-rights, and editorial approval are implemented.
+out-of-sample forecast scoring, grain-news event evidence, market-data
+publication rights, and editorial approval are implemented. Current corn runs
+include archived FRED context for the broad U.S. dollar, WTI crude oil, the
+10-year Treasury yield, and the effective federal funds rate. The public CSV
+adapter requires no FRED key, refuses historical replay, and conservatively
+delays every daily observation by seven calendar days.
 
 The corn publication draft includes local PNG charts for exact-contract price
 and moving averages, the futures curve, CFTC positioning, indexed contract

@@ -15,6 +15,7 @@ from tradingagents.commodities.official.fas import load_corn_export_sales
 from tradingagents.commodities.official.inspections import (
     load_corn_export_inspections,
 )
+from tradingagents.commodities.official.macro import load_grain_macro
 from tradingagents.commodities.official.models import OfficialSnapshot
 from tradingagents.commodities.official.pipeline import build_official_evidence
 from tradingagents.commodities.official.wasde import (
@@ -214,6 +215,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         fas_loader=None,
         inspections_loader=None,
         weather_loader=None,
+        macro_loader=None,
     )
     payload = run.evidence.to_dict()
 
@@ -274,6 +276,7 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
             {"status": "ready", "values": {"weekly_inspections": 275}},
         ),
         weather_loader=None,
+        macro_loader=None,
     )
     payload = run.evidence.to_dict()
 
@@ -407,6 +410,63 @@ def test_eia_refuses_current_api_for_historical_replay():
             today=date(2026, 7, 30),
             session=_EiaSession(),
             api_key="fixture",
+        )
+
+
+class _MacroResponse:
+    def __init__(self, content: bytes):
+        self.content = content
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+class _MacroSession:
+    values = {
+        "DTWEXBGS": (120.5401, 120.7105),
+        "DCOILWTICO": (86.04, 91.74),
+        "DGS10": (4.71, 4.69),
+        "DFF": (3.63, 3.63),
+    }
+
+    def get(self, _url: str, **kwargs):
+        series_id = kwargs["params"]["id"]
+        older, newer = self.values[series_id]
+        content = (
+            f"observation_date,{series_id}\n"
+            f"2026-07-24,{older}\n"
+            f"2026-07-25,{newer}\n"
+        ).encode()
+        return _MacroResponse(content)
+
+
+@pytest.mark.unit
+def test_fred_macro_uses_conservative_rows_and_archives_public_csv():
+    snapshot = load_grain_macro(
+        as_of=datetime(2026, 7, 31, 23, tzinfo=UTC),
+        today=date(2026, 7, 31),
+        session=_MacroSession(),
+        retrieved_at=datetime(2026, 7, 31, 23, 30, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert snapshot.section["status"] == "ready"
+    assert snapshot.section["coverage_status"] == "partial"
+    assert values["broad_us_dollar_index"] == 120.5401
+    assert values["broad_us_dollar_index_period"] == "2026-07-24"
+    assert values["wti_crude_oil"] == 86.04
+    assert len(snapshot.observations) == 4
+    assert snapshot.source["api_key_mode"] == "not_required_public_csv"
+    assert b"DTWEXBGS" in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_fred_macro_refuses_current_csv_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_grain_macro(
+            as_of=datetime(2026, 7, 30, 23, tzinfo=UTC),
+            today=date(2026, 7, 31),
+            session=_MacroSession(),
         )
 
 

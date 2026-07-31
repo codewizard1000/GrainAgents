@@ -385,6 +385,7 @@ def analyze(
                     "NOAA/NIDIS, NWS, and USDA NASS",
                     "USDA FAS",
                     "USDA AMS/FGIS",
+                    "Federal Reserve Bank of St. Louis",
                 }
             ],
         },
@@ -393,7 +394,7 @@ def analyze(
         "contract": evidence.instrument.symbol,
         "as_of": evidence.as_of.isoformat(),
         "forecast_horizons": list(evidence.forecast_horizons),
-        "analysts": ["technical"],
+        "analysts": ["technical", "official_macro_context"],
         "research_depth": research_depth,
         "status": payload["quality"]["status"],
         "publication_status": (

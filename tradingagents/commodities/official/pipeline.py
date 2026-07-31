@@ -11,6 +11,7 @@ from .cftc import load_corn_cot
 from .eia import load_corn_ethanol
 from .fas import load_corn_export_sales
 from .inspections import load_corn_export_inspections
+from .macro import load_grain_macro
 from .models import OfficialDataError, OfficialSnapshot
 from .wasde import load_corn_wasde
 from .weather import load_corn_weather
@@ -38,6 +39,7 @@ def build_official_evidence(
     fas_loader: OfficialLoader | None = load_corn_export_sales,
     inspections_loader: OfficialLoader | None = load_corn_export_inspections,
     weather_loader: OfficialLoader | None = load_corn_weather,
+    macro_loader: OfficialLoader | None = load_grain_macro,
 ) -> OfficialEvidenceRun:
     """Add point-in-time-safe official evidence without hiding source failures."""
     if base.instrument.commodity.value != "corn":
@@ -81,6 +83,8 @@ def build_official_evidence(
         loader_calls.append(
             ("NOAA/USDA weather", weather_loader, {"as_of": base.as_of})
         )
+    if macro_loader is not None:
+        loader_calls.append(("FRED macro", macro_loader, {"as_of": base.as_of}))
     for label, loader, kwargs in loader_calls:
         try:
             snapshots.append(loader(**kwargs))

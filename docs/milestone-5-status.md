@@ -13,7 +13,11 @@
   continues to return the technical report.
 - Added blocker detection for incomplete core evidence, stale or contradictory
   evidence, internal-testing market-data licensing, research-only forecasts,
-  missing news/macro evidence, and incomplete export-demand evidence.
+  missing grain-news event evidence, and incomplete export-demand evidence.
+- Added archived, evidence-linked FRED observations for the broad U.S. dollar,
+  WTI crude, the 10-year Treasury yield, and the effective federal funds rate.
+  The public CSV adapter needs no API key, refuses historical replay, and uses
+  a conservative seven-day availability buffer.
 - Added a separate `approve-publication` command. It refuses any run with a
   blocker and never performs external publication. For an unblocked run it
   records the human editor, timestamp, note, and SHA-256 of the exact approved
@@ -30,9 +34,10 @@
 
 ## Live verification
 
-The 2026-07-30 `ZCZ26` run generated a neutral December corn draft with a
-69.7% deterministic base-scenario probability and a calibrated 20-session
-range of $3.949627-$5.466114.
+The 2026-07-31 `ZCZ26` run generated a neutral December corn draft with a
+72.1% deterministic base-scenario probability and a calibrated 20-session
+range of $3.934833-$5.400680. The run archived all four FRED CSV series and
+rendered their July 23 observations with stable fact references.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -40,8 +45,8 @@ Its current blockers are:
 - incomplete weather evidence
 - unverified market-data redistribution rights
 - research-only forecast status
-- unavailable grain-news and macro evidence
-- unavailable weekly export-sales and export-inspection evidence
+- unavailable grain-news event evidence
+- incomplete multi-year seasonal comparison
 
 The live draft remains `publication_ready: false`.
 
@@ -81,19 +86,24 @@ comparison baseline.
   evidence references, and partial-status disclosures.
 - Comparison tests verify that the latest earlier approved report is selected
   while newer blocked drafts are ignored.
+- Macro tests verify conservative availability selection, archived public CSV
+  payloads, historical-replay refusal, blocker separation, and publication
+  citations.
 - The live EIA credential remains absent from all generated artifacts.
+- The full suite passes with 645 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
-- The news report is an explicit unavailable marker, not a news analyst.
+- The news report contains official macro context, but the grain-news event
+  layer remains an explicit unavailable marker rather than a news analyst.
 - Change-from-prior-report cannot be calculated until an earlier approved
   publication exists.
 - A true multi-year seasonal comparison is not available; the current chart is
   an explicitly labelled indexed exact-contract history.
 - Scenario-probability change cannot be plotted until an approved prior report
   exists.
-- Weather anomalies, a 14-day weather layer, yield impact, export sales, and
-  export inspections remain missing.
+- Weather anomalies, a 14-day weather layer, and calibrated yield impact remain
+  missing. Export sales and export inspections are connected for current runs.
 - The current Databento/exchange license scope is internal testing only, so
   publication must remain blocked regardless of editorial approval.
 - Soybean and wheat publication renderers are not implemented in this slice.
