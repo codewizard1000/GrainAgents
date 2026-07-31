@@ -17,8 +17,8 @@ publication.
 > weekly ethanol demand proxies, USDA FAS weekly corn export sales, USDA
 > AMS/FGIS export inspections, official FRED macro context, and tightly
 > filtered Federal Register grain-policy events. It now adds production-
-> weighted corn drought
-> exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
+> weighted corn drought exposure, an acreage-weighted seven-day NWS sample,
+> a dated acreage-weighted CPC 8–14-day outlook, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Weather anomalies,
 > calibrated live forecast scoring, and final publication remain intentionally
@@ -73,6 +73,12 @@ exposure, and stocks-to-use. Every chart records contract, as-of date, units,
 sources, evidence references, and a SHA-256 in `charts/charts_manifest.json`.
 The seasonal and scenario-change charts remain explicitly partial until a
 multi-year seasonal panel and an earlier approved report exist.
+
+The weather report uses dated NOAA Climate Prediction Center GIS archives for
+the 8–14-day temperature and precipitation outlook. CPC probability polygons
+are classified at the same twelve disclosed Corn Belt points and weighted by
+USDA 2026 intended corn acres. These are category probabilities relative to
+climatology, not forecasts of temperature or rainfall magnitude.
 
 For internal testing with Databento, set these values in the ignored `.env`
 file:

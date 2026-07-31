@@ -342,6 +342,44 @@ def build_publication_bundle(
         evidence,
         "corn_weather_sample_weighted_7_day_precipitation_mm",
     )
+    weather_outlook = (evidence.get("weather") or {}).get("outlook_8_14_day")
+    if weather_outlook:
+        outlook_period = (
+            f"{weather_outlook['valid_start']}/{weather_outlook['valid_end']}"
+        )
+        temperature_category = weather_outlook["temperature"][
+            "dominant_category"
+        ]
+        precipitation_category = weather_outlook["precipitation"][
+            "dominant_category"
+        ]
+        temperature_outlook_share = _find_optional_fact(
+            evidence,
+            "cpc_corn_8_14_day_temperature_"
+            f"{temperature_category}_acre_share",
+        )
+        precipitation_outlook_share = _find_optional_fact(
+            evidence,
+            "cpc_corn_8_14_day_precipitation_"
+            f"{precipitation_category}_acre_share",
+        )
+        if (
+            temperature_outlook_share is not None
+            and precipitation_outlook_share is not None
+        ):
+            extended_weather_text = (
+                f"For {outlook_period}, the CPC 8-14 day dominant category is "
+                f"{temperature_category.replace('_', ' ')} temperature across "
+                f"{_number(temperature_outlook_share['value'], 1)}% of sampled "
+                f"acres {_citation(temperature_outlook_share)} and "
+                f"{precipitation_category.replace('_', ' ')} precipitation "
+                f"across {_number(precipitation_outlook_share['value'], 1)}% "
+                f"{_citation(precipitation_outlook_share)}."
+            )
+        else:
+            extended_weather_text = "The CPC 8-14 day facts are unavailable."
+    else:
+        extended_weather_text = "The CPC 8-14 day outlook is unavailable."
     noncommercial_net = _find_fact(evidence, "cftc_corn_noncommercial_net")
     first_notice = _find_fact(evidence, "first_notice_date")
     broad_dollar = _find_optional_fact(
@@ -782,8 +820,8 @@ WASDE production is {_number(production["value"], 0)} million bushels
 Moderate drought or worse covers {_number(drought["value"], 1)}% of corn area
 {_citation(drought)}. The acreage-sample-weighted seven-day precipitation
 forecast is {_number(precipitation["value"], 1)} mm
-{_citation(precipitation)}. Temperature and rainfall anomalies, a 14-day
-forecast, calibrated yield impact, and a complete weather-risk score remain
+{_citation(precipitation)}. {extended_weather_text} Temperature and rainfall
+anomalies, calibrated yield impact, and a complete weather-risk score remain
 missing.
 {weather_chart}
 

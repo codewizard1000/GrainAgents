@@ -383,6 +383,7 @@ def analyze(
                     "CFTC",
                     "EIA",
                     "NOAA/NIDIS, NWS, and USDA NASS",
+                    "NOAA Climate Prediction Center",
                     "USDA FAS",
                     "USDA AMS/FGIS",
                     "Federal Reserve Bank of St. Louis",

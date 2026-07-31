@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import date, datetime, timezone
 
 import pytest
@@ -10,6 +12,7 @@ from tradingagents.commodities.official.cftc import (
     conservative_available_at,
     parse_corn_cot,
 )
+from tradingagents.commodities.official.cpc import load_corn_8_14_day_outlook
 from tradingagents.commodities.official.eia import load_corn_ethanol
 from tradingagents.commodities.official.events import load_grain_regulatory_events
 from tradingagents.commodities.official.fas import load_corn_export_sales
@@ -25,7 +28,10 @@ from tradingagents.commodities.official.wasde import (
     parse_release_index,
 )
 from tradingagents.commodities.official.weather import load_corn_weather
-from tradingagents.commodities.reporting import render_demand_report
+from tradingagents.commodities.reporting import (
+    render_demand_report,
+    render_weather_report,
+)
 
 UTC = timezone.utc
 
@@ -216,6 +222,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         fas_loader=None,
         inspections_loader=None,
         weather_loader=None,
+        outlook_loader=None,
         macro_loader=None,
         event_loader=None,
     )
@@ -277,7 +284,25 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
             "source_usda_ams_fgis_corn_inspections",
             {"status": "ready", "values": {"weekly_inspections": 275}},
         ),
-        weather_loader=None,
+        weather_loader=snapshot_loader(
+            "weather",
+            "source_noaa_usda_corn_weather",
+            {
+                "status": "partial",
+                "values": {"d1_or_worse_percent": 20},
+                "missing": ["14_day_forecast", "yield_impact_range"],
+            },
+        ),
+        outlook_loader=snapshot_loader(
+            "weather_outlook",
+            "source_noaa_cpc_corn_8_14_day",
+            {
+                "status": "ready",
+                "issue_date": "2026-07-30",
+                "valid_start": "2026-08-07",
+                "valid_end": "2026-08-13",
+            },
+        ),
         macro_loader=snapshot_loader(
             "macro",
             "source_fred_grain_macro",
@@ -317,6 +342,11 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
     ] == "2026-14772"
     assert "official_grain_news_events" not in payload["macro"]["missing"]
     assert "black_sea_shipping" in payload["macro"]["missing"]
+    assert payload["weather"]["outlook_8_14_day"]["issue_date"] == (
+        "2026-07-30"
+    )
+    assert "14_day_forecast" not in payload["weather"]["missing"]
+    assert "yield_impact_range" in payload["weather"]["missing"]
 
 
 @pytest.mark.unit
@@ -803,6 +833,91 @@ class _WeatherResponse:
     def json(self) -> dict:
         assert self._payload is not None
         return self._payload
+
+
+def _cpc_kmz(variable: str, category: str, probability: float) -> bytes:
+    label = "Temperature" if variable == "temp" else "Precipitation"
+    kml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>8-14 Day {label} Outlook - Created: 07/30/2026 - Valid: 08/07/2026 - 08/13/2026</name>
+    <Placemark>
+      <name>{probability:.1f}% Chance of {category} Normal {label}</name>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        -110,30 -80,30 -80,50 -110,50 -110,30
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+  </Document>
+</kml>""".encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr(f"814{variable}_latest.kml", kml)
+    return output.getvalue()
+
+
+class _CpcSession:
+    def get(self, url: str, **_kwargs):
+        assert "20260730" in url
+        if "814temp" in url:
+            return _WeatherResponse(content=_cpc_kmz("temp", "Above", 50))
+        return _WeatherResponse(content=_cpc_kmz("prcp", "Below", 40))
+
+
+@pytest.mark.unit
+def test_cpc_outlook_uses_dated_archive_and_acreage_weighted_categories():
+    snapshot = load_corn_8_14_day_outlook(
+        as_of=datetime(2026, 7, 31, 23, tzinfo=UTC),
+        today=date(2026, 7, 31),
+        session=_CpcSession(),
+        retrieved_at=datetime(2026, 7, 31, 23, 30, tzinfo=UTC),
+    )
+
+    section = snapshot.section
+    assert section["issue_date"] == "2026-07-30"
+    assert section["valid_start"] == "2026-08-07"
+    assert section["valid_end"] == "2026-08-13"
+    assert section["temperature"]["dominant_category"] == "above_normal"
+    assert section["temperature"]["acre_share_percent"]["above_normal"] == 100
+    assert section["precipitation"]["dominant_category"] == "below_normal"
+    assert section["precipitation"]["acre_share_percent"]["below_normal"] == 100
+    assert len(snapshot.observations) == 8
+    assert b"temperature_kmz_base64" in snapshot.raw_content
+    assert snapshot.source["api_key_mode"] == "not_required"
+    report = render_weather_report(
+        {
+            "as_of": "2026-07-31T23:00:00+00:00",
+            "instrument": {"symbol": "ZCZ26"},
+            "weather": {
+                "status": "partial",
+                "values": {
+                    "drought_valid_date": "2026-07-28",
+                    "d1_or_worse_percent": 39,
+                    "d2_or_worse_percent": 20,
+                    "d3_or_worse_percent": 6,
+                    "sample_weighted_7_day_precipitation_mm": 30,
+                    "sample_weighted_7_day_mean_temperature_c": 25,
+                    "sample_weighted_7_day_maximum_temperature_c": 31,
+                    "sample_coverage_percent_of_intended_acres": 85,
+                },
+                "missing": ["yield_impact_range"],
+                "methodology": "fixture",
+                "outlook_8_14_day": dict(section),
+            },
+        }
+    )
+    assert "## CPC 8-14 day outlook" in report
+    assert "above normal" in report
+    assert "below normal" in report
+
+
+@pytest.mark.unit
+def test_cpc_outlook_refuses_current_retrieval_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not replay-safe"):
+        load_corn_8_14_day_outlook(
+            as_of=datetime(2026, 7, 30, 23, tzinfo=UTC),
+            today=date(2026, 7, 31),
+            session=_CpcSession(),
+        )
 
 
 class _WeatherSession:

@@ -6,6 +6,9 @@
   NASS/U.S. Drought Monitor overlay.
 - Added a twelve-state National Weather Service seven-day point sample,
   weighted by USDA NASS 2026 intended corn acres.
+- Added dated NOAA CPC 8-14 day temperature and precipitation GIS archives,
+  classified at the same twelve points and weighted by intended corn acres.
+  Mutable `latest` files are not used.
 - Added current-endpoint safety: current weather calls are rejected for
   historical as-of dates and NWS grid updates after the run timestamp are
   excluded.
@@ -43,6 +46,11 @@ On 2026-07-30, the official weather adapter returned:
 - 28.378 mm acreage-sample-weighted seven-day precipitation
 - 23.229 C acreage-sample-weighted seven-day mean temperature
 - 82.968% coverage of USDA's intended 2026 corn acres
+
+The July 30 CPC issue, valid August 7-13, placed 100% of sampled intended corn
+acres in an above-normal temperature category. For precipitation, 86.03% fell
+in below-normal and 13.97% in near-normal categories. Eight stable facts and
+the exact dated temperature and precipitation KMZ payloads were archived.
 
 Using the archived 310-observation `ZCZ26` history, the baseline ensemble
 produced deterministic 5-, 20-, and 60-trading-day distributions. The
@@ -88,8 +96,9 @@ where the range is wide or observed coverage is below nominal.
   within-state spatial variation.
 - Production-weighted rainfall and temperature anomalies need a vintage-safe
   1991-2020 normal and observation pipeline.
-- A 14-day weather layer, calibrated weather risk score, and yield-impact range
-  are still missing, so weather remains `partial`.
+- A calibrated weather risk score and yield-impact range are still missing, so
+  weather remains `partial`. CPC category probabilities do not supply anomaly
+  magnitude.
 - Forecast models are currently price-only and do not yet ingest the official
   fundamental or weather features.
 - Rolling backtests are now leak-safe and auditable, but they are not a

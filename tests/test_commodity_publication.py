@@ -352,3 +352,45 @@ def test_publication_renders_macro_events_and_marks_news_coverage_partial():
     assert "[fact_fred_wti_crude_oil_usd_per_barrel_2026_07_23]" in (
         bundle.news_report
     )
+
+
+@pytest.mark.unit
+def test_publication_renders_cpc_8_14_day_outlook_facts():
+    evidence = _evidence()
+    evidence["weather"] = {
+        "outlook_8_14_day": {
+            "valid_start": "2026-08-07",
+            "valid_end": "2026-08-13",
+            "temperature": {"dominant_category": "above_normal"},
+            "precipitation": {"dominant_category": "below_normal"},
+        }
+    }
+    evidence["facts"].extend(
+        [
+            _fact(
+                "fact_cpc_corn_8_14_day_temperature_above_normal_acre_share_2026_08_07_2026_08_13",
+                "cpc_corn_8_14_day_temperature_above_normal_acre_share",
+                75.0,
+            ),
+            _fact(
+                "fact_cpc_corn_8_14_day_precipitation_below_normal_acre_share_2026_08_07_2026_08_13",
+                "cpc_corn_8_14_day_precipitation_below_normal_acre_share",
+                60.0,
+            ),
+        ]
+    )
+
+    bundle = build_publication_bundle(
+        evidence,
+        quantitative=_quantitative(),
+        scenarios=_scenarios(),
+    )
+
+    assert "CPC 8-14 day dominant category" in bundle.newsletter
+    assert "above normal temperature" in bundle.newsletter
+    assert "below normal precipitation" in bundle.newsletter
+    assert (
+        "[fact_cpc_corn_8_14_day_temperature_"
+        "above_normal_acre_share_2026_08_07_2026_08_13]"
+        in bundle.newsletter
+    )

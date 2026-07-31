@@ -392,6 +392,38 @@ def render_weather_report(evidence: dict[str, Any]) -> str:
     drought_period = values["drought_valid_date"]
     as_of_period = evidence["as_of"][:10]
     missing = ", ".join(section["missing"])
+    outlook = section.get("outlook_8_14_day")
+    if outlook:
+        period = f"{outlook['valid_start']}/{outlook['valid_end']}"
+        temperature = outlook["temperature"]
+        precipitation = outlook["precipitation"]
+        temperature_share_metric = (
+            "cpc_corn_8_14_day_temperature_"
+            f"{temperature['dominant_category']}_acre_share"
+        )
+        precipitation_share_metric = (
+            "cpc_corn_8_14_day_precipitation_"
+            f"{precipitation['dominant_category']}_acre_share"
+        )
+        outlook_text = f"""
+
+## CPC 8-14 day outlook
+
+**Issue date:** {outlook['issue_date']}
+
+**Valid:** {outlook['valid_start']} through {outlook['valid_end']}
+
+| Variable | Acreage-weighted dominant category | Sampled-acre share | Weighted category probability | Evidence |
+|---|---|---:|---:|---|
+| Temperature | {temperature['dominant_category'].replace('_', ' ')} | {_number(temperature['acre_share_percent'][temperature['dominant_category']], 1)}% | {_number(temperature['weighted_category_probability_percent'], 1)}% | {_official_fact(temperature_share_metric, period)} {_official_fact('cpc_corn_8_14_day_temperature_weighted_probability', period)} |
+| Precipitation | {precipitation['dominant_category'].replace('_', ' ')} | {_number(precipitation['acre_share_percent'][precipitation['dominant_category']], 1)}% | {_number(precipitation['weighted_category_probability_percent'], 1)}% | {_official_fact(precipitation_share_metric, period)} {_official_fact('cpc_corn_8_14_day_precipitation_weighted_probability', period)} |
+
+CPC categories are probabilities relative to climatology, not forecasts of
+temperature or precipitation magnitude. The acreage-weighted summaries sample
+the same twelve transparent Corn Belt points used by the seven-day layer.
+"""
+    else:
+        outlook_text = "\n\nThe CPC 8-14 day outlook was unavailable."
     return f"""# Corn weather and drought
 
 **Status:** {section["status"]}
@@ -410,6 +442,7 @@ def render_weather_report(evidence: dict[str, Any]) -> str:
 
 This is useful current context, but it is not yet a complete weather-and-yield
 model. Remaining weather fields: {missing}.
+{outlook_text}
 """
 
 

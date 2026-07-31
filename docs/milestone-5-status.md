@@ -44,6 +44,8 @@ range of $3.934833-$5.400680. The run archived all four FRED CSV series and
 rendered their July 23 observations with stable fact references. It also
 archived 11 matched Federal Register documents and rendered 11 unique event
 facts without assigning directional market impact.
+The same run archived the dated July 30 CPC 8-14 day outlook, produced eight
+weather-outlook facts, and removed `14_day_forecast` from the weather gaps.
 
 The approval gate correctly refused the live run and wrote no approval record.
 Its current blockers are:
@@ -98,8 +100,11 @@ comparison baseline.
 - Regulatory-event tests verify exact title filtering, next-day availability,
   historical-replay refusal, pipeline merging, unique event facts, and
   evidence-linked rendering.
+- CPC tests verify dated KMZ selection, KML polygon classification, intended-
+  acreage weighting, historical-replay refusal, pipeline merging, and cited
+  weather/newsletter rendering.
 - The live EIA credential remains absent from all generated artifacts.
-- The full suite passes with 647 tests, 2 optional skips, and clean Ruff lint.
+- The full suite passes with 650 tests, 2 optional skips, and clean Ruff lint.
 
 ## Current limitations
 
@@ -112,8 +117,9 @@ comparison baseline.
   an explicitly labelled indexed exact-contract history.
 - Scenario-probability change cannot be plotted until an approved prior report
   exists.
-- Weather anomalies, a 14-day weather layer, and calibrated yield impact remain
-  missing. Export sales and export inspections are connected for current runs.
+- Weather anomaly magnitudes, calibrated weather risk, and yield impact remain
+  missing. The CPC 8-14 day probability layer, export sales, and export
+  inspections are connected for current runs.
 - The current Databento/exchange license scope is internal testing only, so
   publication must remain blocked regardless of editorial approval.
 - Soybean and wheat publication renderers are not implemented in this slice.
@@ -122,5 +128,5 @@ comparison baseline.
 
 - Add official shipping, river/port, sanctions, China-policy, and international
   crop-estimate sources to broaden the partial grain-news layer.
-- Complete weather anomalies, 14-day forecasts, and yield-impact evidence.
+- Complete weather anomaly magnitudes and yield-impact evidence.
 - Start saving forecast vintages for genuine future-outcome scoring.

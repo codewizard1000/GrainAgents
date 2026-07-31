@@ -8,6 +8,7 @@ from typing import Any
 
 from ..evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 from .cftc import load_corn_cot
+from .cpc import load_corn_8_14_day_outlook
 from .eia import load_corn_ethanol
 from .events import load_grain_regulatory_events
 from .fas import load_corn_export_sales
@@ -40,6 +41,7 @@ def build_official_evidence(
     fas_loader: OfficialLoader | None = load_corn_export_sales,
     inspections_loader: OfficialLoader | None = load_corn_export_inspections,
     weather_loader: OfficialLoader | None = load_corn_weather,
+    outlook_loader: OfficialLoader | None = load_corn_8_14_day_outlook,
     macro_loader: OfficialLoader | None = load_grain_macro,
     event_loader: OfficialLoader | None = load_grain_regulatory_events,
 ) -> OfficialEvidenceRun:
@@ -85,6 +87,10 @@ def build_official_evidence(
         loader_calls.append(
             ("NOAA/USDA weather", weather_loader, {"as_of": base.as_of})
         )
+    if outlook_loader is not None:
+        loader_calls.append(
+            ("NOAA CPC 8-14 day", outlook_loader, {"as_of": base.as_of})
+        )
     if macro_loader is not None:
         loader_calls.append(("FRED macro", macro_loader, {"as_of": base.as_of}))
     if event_loader is not None:
@@ -102,6 +108,7 @@ def build_official_evidence(
     sources = list(base.sources)
     missing = list(base.quality.missing_core_data)
     demand_components: dict[str, Any] = {}
+    weather_outlook: dict[str, Any] | None = None
     macro_events: dict[str, Any] | None = None
     for snapshot in snapshots:
         if snapshot.section_name == "demand":
@@ -116,6 +123,8 @@ def build_official_evidence(
                 else str(source_id or "other")
             )
             demand_components[component] = dict(snapshot.section)
+        elif snapshot.section_name == "weather_outlook":
+            weather_outlook = dict(snapshot.section)
         elif snapshot.section_name == "macro_events":
             macro_events = dict(snapshot.section)
         else:
@@ -171,6 +180,26 @@ def build_official_evidence(
         macro["missing"] = macro_missing
         macro["coverage_status"] = "partial"
         updates["macro"] = freeze_evidence_value(macro)
+    if weather_outlook is not None:
+        weather = dict(updates.get("weather") or base.weather)
+        if not weather:
+            weather = {
+                "status": "partial",
+                "commodity": "corn",
+                "values": {},
+                "missing": [],
+            }
+        weather["outlook_8_14_day"] = weather_outlook
+        weather_missing = list(weather.get("missing", []))
+        if weather_outlook.get("status") == "ready":
+            weather_missing = [
+                item
+                for item in weather_missing
+                if item != "14_day_forecast"
+            ]
+        weather["missing"] = weather_missing
+        weather["status"] = "ready" if not weather_missing else "partial"
+        updates["weather"] = freeze_evidence_value(weather)
 
     quality = EvidenceQuality(
         status=base.quality.status,
