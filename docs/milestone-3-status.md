@@ -7,6 +7,8 @@
 - Added CFTC Legacy Futures Only corn-positioning retrieval and normalization.
 - Added EIA weekly U.S. fuel-ethanol production and stocks as explicit corn
   demand proxies.
+- Added USDA FAS weekly corn export sales, including current- and next-
+  marketing-year commitments aggregated across reported destinations.
 - Selected records by conservative `available_at` timestamps, not merely by
   report period.
 - Added raw official XML/JSON archives and SHA-256 hashes to every live run.
@@ -33,6 +35,12 @@ Historical as-of calls are refused because the endpoint is not a vintage
 database. Weekly observations are conservatively delayed seven calendar days,
 and the archived response from each live run is retained for future replay.
 
+FAS export sales follow the same current-run-only rule because the API can
+revise earlier observations. GrainAgents uses FAS's commodity-level release
+calendar and the official Thursday 8:30 a.m. America/New_York publication time,
+then archives both the release-calendar and export payloads. A free
+`USDA_FAS_API_KEY` from api.data.gov is required.
+
 ## Live verification
 
 On 2026-07-30, the live adapters retrieved:
@@ -44,6 +52,9 @@ On 2026-07-30, the live adapters retrieved:
 - EIA U.S. fuel-ethanol production and ending stocks for the latest
   conservatively available week.
 
+The FAS adapter is fixture-verified but is not yet live-verified in this
+workspace because `USDA_FAS_API_KEY` has not been configured.
+
 ## Current limitations
 
 - WASDE archive discovery currently uses the releases on the archive's first
@@ -52,7 +63,7 @@ On 2026-07-30, the live adapters retrieved:
 - CFTC retrieval currently requests the latest 80 reports; older historical
   runs fail safely.
 - CFTC positioning is market-level, not specific to one delivery contract.
-- FAS export sales, complete weather anomalies, and live probability
+- FAS export inspections, complete weather anomalies, and live probability
   calibration remain incomplete. The first price-only baseline ensemble is
   documented in the Milestone 4 status.
 - The run remains publication-blocked and requires human approval.

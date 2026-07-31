@@ -10,6 +10,7 @@ from tradingagents.commodities.official.cftc import (
     parse_corn_cot,
 )
 from tradingagents.commodities.official.eia import load_corn_ethanol
+from tradingagents.commodities.official.fas import load_corn_export_sales
 from tradingagents.commodities.official.models import OfficialSnapshot
 from tradingagents.commodities.official.pipeline import build_official_evidence
 from tradingagents.commodities.official.wasde import (
@@ -205,6 +206,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         wasde_loader=wasde_loader,
         cftc_loader=cftc_loader,
         eia_loader=None,
+        fas_loader=None,
         weather_loader=None,
     )
     payload = run.evidence.to_dict()
@@ -215,6 +217,60 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
     assert "positioning" not in payload["quality"]["missing_core_data"]
     assert len(payload["facts"]) == 13
     assert len(run.archives) == 2
+
+
+@pytest.mark.unit
+def test_official_pipeline_merges_domestic_and_export_demand_components():
+    base = build_evidence_package(
+        commodity="corn",
+        contract_symbol="ZCZ26",
+        as_of="2026-07-30",
+    )
+
+    def snapshot_loader(section_name, source_id, section):
+        def load(**_kwargs):
+            return OfficialSnapshot(
+                section_name=section_name,
+                section=section,
+                observations=(),
+                source={"source_id": source_id, "provider": "fixture"},
+                archive_filename=f"{source_id}.json",
+                raw_content=b"{}",
+            )
+
+        return load
+
+    run = build_official_evidence(
+        base,
+        wasde_loader=snapshot_loader(
+            "supply_demand",
+            "source_usda_wasde_corn",
+            {"status": "ready"},
+        ),
+        cftc_loader=snapshot_loader(
+            "positioning",
+            "source_cftc_cot_corn",
+            {"status": "ready"},
+        ),
+        eia_loader=snapshot_loader(
+            "demand",
+            "source_eia_weekly_ethanol",
+            {"status": "ready", "values": {"production": 1000}},
+        ),
+        fas_loader=snapshot_loader(
+            "demand",
+            "source_usda_fas_esr_corn",
+            {"status": "ready", "values": {"weekly_exports": 300}},
+        ),
+        weather_loader=None,
+    )
+    payload = run.evidence.to_dict()
+
+    assert payload["demand"]["ethanol"]["values"]["production"] == 1000
+    assert payload["demand"]["export_sales"]["values"]["weekly_exports"] == 300
+    assert payload["demand"]["missing"] == ["export_inspections"]
+    assert payload["demand"]["status"] == "partial"
+    assert "demand" in payload["quality"]["missing_core_data"]
 
 
 class _EiaResponse:
@@ -280,6 +336,85 @@ def test_eia_refuses_current_api_for_historical_replay():
             as_of=datetime(2026, 7, 29, 20, tzinfo=UTC),
             today=date(2026, 7, 30),
             session=_EiaSession(),
+            api_key="fixture",
+        )
+
+
+class _FasResponse:
+    def __init__(self, payload: list[dict]):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> list[dict]:
+        return self._payload
+
+
+class _FasSession:
+    def get(self, url: str, **kwargs):
+        assert kwargs["headers"]["API_KEY"] == "not-written-to-output"
+        if url.endswith("/datareleasedates"):
+            return _FasResponse(
+                [
+                    {
+                        "commodityCode": 401,
+                        "marketYear": 2026,
+                        "releaseTimeStamp": "2026-07-30T00:00:00",
+                    }
+                ]
+            )
+        rows = []
+        for country, multiplier in ((2010, 1), (3010, 2)):
+            rows.append(
+                {
+                    "commodityCode": 401,
+                    "countryCode": country,
+                    "weeklyExports": 100 * multiplier,
+                    "accumulatedExports": 1000 * multiplier,
+                    "outstandingSales": 4000 * multiplier,
+                    "grossNewSales": 120 * multiplier,
+                    "currentMYNetSales": 110 * multiplier,
+                    "currentMYTotalCommitment": 5000 * multiplier,
+                    "nextMYOutstandingSales": 800 * multiplier,
+                    "nextMYNetSales": 50 * multiplier,
+                    "unitId": 1,
+                    "weekEndingDate": "2026-07-23T00:00:00",
+                }
+            )
+        return _FasResponse(rows)
+
+
+@pytest.mark.unit
+def test_fas_export_sales_aggregates_latest_week_and_targets_next_crop():
+    snapshot = load_corn_export_sales(
+        as_of=datetime(2026, 7, 30, 20, tzinfo=UTC),
+        crop_year="2026/27",
+        today=date(2026, 7, 30),
+        session=_FasSession(),
+        api_key="not-written-to-output",
+        retrieved_at=datetime(2026, 7, 30, 21, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert snapshot.section["target_role"] == "next_marketing_year"
+    assert snapshot.section["market_year"] == 2026
+    assert values["weekly_exports"] == 300
+    assert values["current_my_total_commitment"] == 15000
+    assert values["target_marketing_year_commitment"] == 2400
+    assert snapshot.section["unit"] == "metric_tons"
+    assert len(snapshot.observations) == 9
+    assert b"not-written-to-output" not in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_fas_refuses_current_api_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_corn_export_sales(
+            as_of=datetime(2026, 7, 29, 20, tzinfo=UTC),
+            crop_year="2026/27",
+            today=date(2026, 7, 30),
+            session=_FasSession(),
             api_key="fixture",
         )
 

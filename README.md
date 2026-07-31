@@ -14,12 +14,13 @@ publication.
 > volume, open interest, and instrument definitions. The `analyze` command now
 > builds deterministic technical evidence, a five-contract futures curve, the
 > current point-in-time USDA WASDE corn balance, CFTC corn positioning, and EIA
-> weekly ethanol demand proxies. It now adds production-weighted corn drought
+> weekly ethanol demand proxies and USDA FAS weekly corn export sales. It now
+> adds production-weighted corn drought
 > exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Weather anomalies,
-> exports, calibrated live forecast scoring, and final publication remain
-> intentionally incomplete. The current corn run now produces a deterministic
+> export inspections, calibrated live forecast scoring, and final publication
+> remain intentionally incomplete. The current corn run now produces a deterministic
 > evidence-linked newsletter draft with an explicit blocker and human-approval
 > gate.
 
@@ -48,8 +49,8 @@ JSON, a blocked newsletter/final-outlook/risk bundle, and a CSV source audit.
 For a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
 The run remains `publication_ready: false` until complete weather anomalies,
-export demand, out-of-sample forecast scoring, and editorial approval are
-implemented.
+export inspections, out-of-sample forecast scoring, and editorial approval
+are implemented.
 
 The corn publication draft includes local PNG charts for exact-contract price
 and moving averages, the futures curve, CFTC positioning, indexed contract
@@ -92,12 +93,17 @@ historical and curve request.
 
 USDA WASDE and CFTC COT use public official endpoints and require no additional
 API keys. EIA weekly ethanol data uses its public `DEMO_KEY` for low-volume
-testing unless `EIA_API_KEY` is configured. Raw XML/JSON payloads are archived
-under `official_data/` with SHA-256 hashes in the source records. The CFTC
+testing unless `EIA_API_KEY` is configured. USDA FAS weekly export sales
+requires a free [api.data.gov key](https://api.data.gov/signup/) stored as
+`USDA_FAS_API_KEY` in the ignored `.env` file. Raw XML/JSON payloads are
+archived under `official_data/` with SHA-256 hashes in the source records. The CFTC
 adapter applies a conservative availability lag and refuses the 2025
 government-shutdown backlog rather than guessing publication dates. The EIA
 current API is refused for historical as-of runs because it is not a vintage
-database. Use `--no-official-data` only for offline technical testing.
+database. The FAS adapter uses the official release calendar, aggregates
+reported destinations, and refuses historical current-API replays because the
+endpoint can revise prior observations. Use `--no-official-data` only for
+offline technical testing.
 
 The forecast ensemble combines random-walk, weekly seasonal-naive, drift,
 local-linear-trend, and exponentially weighted price-change baselines with a

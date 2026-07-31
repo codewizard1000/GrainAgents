@@ -206,7 +206,10 @@ def analyze(
         official_run is not None
         and evidence.instrument.commodity.value == "corn"
         and evidence.supply_demand.get("status") == "ready"
-        and evidence.demand.get("status") == "ready"
+        and (
+            evidence.demand.get("ethanol", evidence.demand).get("status")
+            == "ready"
+        )
         and evidence.positioning.get("status") == "ready"
         and bool(evidence.weather.get("values"))
     )

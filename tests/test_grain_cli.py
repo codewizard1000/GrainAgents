@@ -196,7 +196,13 @@ def test_newsletter_output_writes_blocked_publication_bundle(
         evidence = replace(
             base,
             supply_demand=freeze_evidence_value({"status": "ready"}),
-            demand=freeze_evidence_value({"status": "ready"}),
+            demand=freeze_evidence_value(
+                {
+                    "status": "partial",
+                    "ethanol": {"status": "ready"},
+                    "missing": ["export_sales", "export_inspections"],
+                }
+            ),
             positioning=freeze_evidence_value({"status": "ready"}),
             weather=freeze_evidence_value(
                 {"status": "partial", "values": {"fixture": True}}

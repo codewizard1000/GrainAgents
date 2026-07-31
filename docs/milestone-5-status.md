@@ -13,7 +13,7 @@
   continues to return the technical report.
 - Added blocker detection for incomplete core evidence, stale or contradictory
   evidence, internal-testing market-data licensing, research-only forecasts,
-  missing news/macro evidence, and missing export-demand evidence.
+  missing news/macro evidence, and incomplete export-demand evidence.
 - Added a separate `approve-publication` command. It refuses any run with a
   blocker and never performs external publication. For an unblocked run it
   records the human editor, timestamp, note, and SHA-256 of the exact approved
@@ -100,7 +100,7 @@ comparison baseline.
 
 ## Next publication slice
 
-- Connect export-demand and grain-news evidence before making the draft
+- Connect export inspections and grain-news evidence before making the draft
   eligible for approval.
 - Complete weather anomalies, 14-day forecasts, and yield-impact evidence.
 - Start saving forecast vintages for genuine future-outcome scoring.

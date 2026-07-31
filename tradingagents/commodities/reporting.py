@@ -245,23 +245,88 @@ def render_demand_report(evidence: dict[str, Any]) -> str:
     section = evidence["demand"]
     if not section:
         return "# Demand\n\nPoint-in-time-safe demand evidence was unavailable.\n"
-    values = section["values"]
-    production_period = values["production_period"]
-    stocks_period = values["stocks_period"]
-    return f"""# Corn demand proxies
+    ethanol = section.get("ethanol")
+    export_sales = section.get("export_sales")
+    if ethanol is None and "values" in section:
+        ethanol = section
 
-**Source:** EIA Weekly Petroleum Status Report
-
-**Role:** {section["role"]}
-
-| Metric | Week ending | Value | Unit | Evidence |
-|---|---|---:|---|---|
-| U.S. fuel ethanol production | {production_period} | {_number(values["production"], 0)} | thousand barrels/day | {_official_fact("eia_us_fuel_ethanol_production", production_period)} |
-| U.S. fuel ethanol ending stocks | {stocks_period} | {_number(values["stocks"], 0)} | thousand barrels | {_official_fact("eia_us_fuel_ethanol_stocks", stocks_period)} |
-
-Fuel ethanol statistics are demand context, not a direct bushel-consumption
-estimate. GrainAgents does not convert barrels to corn bushels here.
-"""
+    parts = ["# Corn demand evidence", ""]
+    if ethanol:
+        values = ethanol["values"]
+        production_period = values["production_period"]
+        stocks_period = values["stocks_period"]
+        parts.extend(
+            [
+                "## Domestic ethanol proxy",
+                "",
+                "| Metric | Week ending | Value | Unit | Evidence |",
+                "|---|---|---:|---|---|",
+                (
+                    "| U.S. fuel ethanol production | "
+                    f"{production_period} | {_number(values['production'], 0)} | "
+                    "thousand barrels/day | "
+                    f"{_official_fact('eia_us_fuel_ethanol_production', production_period)} |"
+                ),
+                (
+                    "| U.S. fuel ethanol ending stocks | "
+                    f"{stocks_period} | {_number(values['stocks'], 0)} | "
+                    "thousand barrels | "
+                    f"{_official_fact('eia_us_fuel_ethanol_stocks', stocks_period)} |"
+                ),
+                "",
+                (
+                    "Fuel ethanol statistics are demand context, not a direct "
+                    "bushel-consumption estimate."
+                ),
+                "",
+            ]
+        )
+    if export_sales:
+        values = export_sales["values"]
+        period = export_sales["week_ending"]
+        unit = export_sales["unit"].replace("_", " ")
+        rows = (
+            ("Weekly exports", "weekly_exports"),
+            ("Accumulated exports", "accumulated_exports"),
+            ("Outstanding sales", "outstanding_sales"),
+            ("Current-MY net sales", "current_my_net_sales"),
+            ("Current-MY total commitment", "current_my_total_commitment"),
+            ("Next-MY outstanding sales", "next_my_outstanding_sales"),
+            ("Next-MY net sales", "next_my_net_sales"),
+            (
+                f"Target {export_sales['crop_year']} commitment",
+                "target_marketing_year_commitment",
+            ),
+        )
+        parts.extend(
+            [
+                "## USDA weekly export sales",
+                "",
+                (
+                    f"**Target role:** "
+                    f"{export_sales['target_role'].replace('_', ' ')}"
+                ),
+                "",
+                "| Metric | Week ending | Value | Unit | Evidence |",
+                "|---|---|---:|---|---|",
+                *[
+                    f"| {label} | {period} | {_number(values[metric], 0)} | "
+                    f"{unit} | "
+                    f"{_official_fact(f'fas_corn_{metric}', period)} |"
+                    for label, metric in rows
+                ],
+                "",
+                (
+                    "FAS figures aggregate reported destinations. Export "
+                    "inspections remain a separate missing confirmation series."
+                ),
+                "",
+            ]
+        )
+    missing = ", ".join(section.get("missing", []))
+    if missing:
+        parts.extend([f"**Remaining demand evidence:** {missing}.", ""])
+    return "\n".join(parts)
 
 
 def render_weather_report(evidence: dict[str, Any]) -> str:

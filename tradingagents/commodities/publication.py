@@ -43,6 +43,16 @@ def _find_fact(
     return matching[-1]
 
 
+def _find_optional_fact(
+    evidence: dict[str, Any],
+    metric: str,
+) -> dict[str, Any] | None:
+    matching = [
+        fact for fact in evidence["facts"] if fact["metric"] == metric
+    ]
+    return matching[-1] if matching else None
+
+
 def _citation(fact: dict[str, Any]) -> str:
     return f"[{fact['fact_id']}]"
 
@@ -120,12 +130,22 @@ def _publication_blockers(
                 "message": "The grain-news and macro evidence section is unavailable.",
             }
         )
-    blockers.append(
-        {
-            "code": "export_demand_not_implemented",
-            "message": "Weekly export-sales and export-inspection evidence is unavailable.",
-        }
-    )
+    demand = evidence.get("demand") or {}
+    export_sales = demand.get("export_sales") or {}
+    if export_sales.get("status") != "ready":
+        blockers.append(
+            {
+                "code": "export_sales_unavailable",
+                "message": "USDA weekly export-sales evidence is unavailable.",
+            }
+        )
+    if "export_inspections" in demand.get("missing", ["export_inspections"]):
+        blockers.append(
+            {
+                "code": "export_inspections_not_implemented",
+                "message": "Weekly export-inspection evidence is unavailable.",
+            }
+        )
     if charts_manifest is not None and any(
         chart["filename"] == "seasonal_comparison.png"
         and chart["status"] != "ready"
@@ -284,6 +304,11 @@ def build_publication_bundle(
         "eia_us_fuel_ethanol_production",
     )
     ethanol_stocks = _find_fact(evidence, "eia_us_fuel_ethanol_stocks")
+    weekly_exports = _find_optional_fact(evidence, "fas_corn_weekly_exports")
+    target_export_commitment = _find_optional_fact(
+        evidence,
+        "fas_corn_target_marketing_year_commitment",
+    )
     drought = _find_fact(evidence, "corn_drought_d1_or_worse_percent")
     precipitation = _find_fact(
         evidence,
@@ -406,6 +431,12 @@ This is a deterministic research draft, not an LLM-generated price forecast
 and not a trading or hedging recommendation.
 """
 
+    export_risk = (
+        "USDA export sales are connected, but export inspections remain "
+        "unavailable"
+        if weekly_exports is not None
+        else "export-sales and export-inspection evidence is unavailable"
+    )
     risk_report = f"""# Risk review — DRAFT
 
 - The reference 80% interval is
@@ -419,8 +450,8 @@ and not a trading or hedging recommendation.
 - Rolling nominal-80% coverage is
   {_number(forecast_coverage["value"] * 100, 1)}%
   {_citation(forecast_coverage)}.
-- Weather evidence is partial, export-demand evidence is missing, and current
-  market-data licensing is restricted to internal testing.
+- Weather evidence is partial, {export_risk}, and current market-data
+  licensing is restricted to internal testing.
 - Human approval is mandatory, and this draft cannot pass the gate while any
   blocker remains.
 """
@@ -497,6 +528,24 @@ changed by {_number(changes["scenario_probability_bull"] * 100, 1)},
         "cot_positioning.png",
         "CFTC corn positioning",
     )
+    export_sales_text = (
+        "USDA FAS reports weekly corn exports of "
+        f"{_number(weekly_exports['value'], 0)} metric tons "
+        f"{_citation(weekly_exports)}. Target-marketing-year commitment is "
+        f"{_number(target_export_commitment['value'], 0)} metric tons "
+        f"{_citation(target_export_commitment)}. Export inspections remain "
+        "unavailable."
+        if weekly_exports is not None and target_export_commitment is not None
+        else (
+            "USDA weekly export sales and export inspections are not "
+            "available for this run."
+        )
+    )
+    export_gap_text = (
+        "missing export-inspection and news evidence"
+        if weekly_exports is not None
+        else "missing export and news evidence"
+    )
     newsletter = f"""# DRAFT — NOT APPROVED FOR PUBLICATION
 
 ## {headline}
@@ -515,7 +564,7 @@ ${_number(median, 4)} per bushel {_citation(forecast_median)}, compared with
 the current ${_number(current, 4)} settlement {_citation(settlement)}. The
 base scenario has {_number(probabilities["base"] * 100, 1)}% probability
 [output_scenario_base_probability]. Wide calibrated intervals, incomplete
-weather evidence, missing export and news evidence, and unverified
+weather evidence, {export_gap_text}, and unverified
 redistribution rights prevent publication.
 
 ## Price scenarios
@@ -578,8 +627,7 @@ Fuel-ethanol production is
 {_number(ethanol_production["value"], 0)} thousand barrels per day
 {_citation(ethanol_production)}, and stocks are
 {_number(ethanol_stocks["value"], 0)} thousand barrels
-{_citation(ethanol_stocks)}. Weekly export sales and inspections are not yet
-connected.
+{_citation(ethanol_stocks)}. {export_sales_text}
 
 ## Fund positioning
 

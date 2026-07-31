@@ -9,6 +9,7 @@ from typing import Any
 from ..evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 from .cftc import load_corn_cot
 from .eia import load_corn_ethanol
+from .fas import load_corn_export_sales
 from .models import OfficialDataError, OfficialSnapshot
 from .wasde import load_corn_wasde
 from .weather import load_corn_weather
@@ -33,6 +34,7 @@ def build_official_evidence(
     wasde_loader: OfficialLoader = load_corn_wasde,
     cftc_loader: OfficialLoader = load_corn_cot,
     eia_loader: OfficialLoader | None = load_corn_ethanol,
+    fas_loader: OfficialLoader | None = load_corn_export_sales,
     weather_loader: OfficialLoader | None = load_corn_weather,
 ) -> OfficialEvidenceRun:
     """Add point-in-time-safe official evidence without hiding source failures."""
@@ -54,6 +56,17 @@ def build_official_evidence(
     ]
     if eia_loader is not None:
         loader_calls.append(("EIA ethanol", eia_loader, {"as_of": base.as_of}))
+    if fas_loader is not None:
+        loader_calls.append(
+            (
+                "USDA FAS export sales",
+                fas_loader,
+                {
+                    "as_of": base.as_of,
+                    "crop_year": base.instrument.crop_year,
+                },
+            )
+        )
     if weather_loader is not None:
         loader_calls.append(
             ("NOAA/USDA weather", weather_loader, {"as_of": base.as_of})
@@ -68,8 +81,20 @@ def build_official_evidence(
     facts = list(base.facts)
     sources = list(base.sources)
     missing = list(base.quality.missing_core_data)
+    demand_components: dict[str, Any] = {}
     for snapshot in snapshots:
-        updates[snapshot.section_name] = freeze_evidence_value(snapshot.section)
+        if snapshot.section_name == "demand":
+            source_id = snapshot.source.get("source_id")
+            component = (
+                "ethanol"
+                if source_id == "source_eia_weekly_ethanol"
+                else "export_sales"
+                if source_id == "source_usda_fas_esr_corn"
+                else str(source_id or "other")
+            )
+            demand_components[component] = dict(snapshot.section)
+        else:
+            updates[snapshot.section_name] = freeze_evidence_value(snapshot.section)
         if (
             snapshot.section.get("status") == "ready"
             and snapshot.section_name in missing
@@ -82,6 +107,22 @@ def build_official_evidence(
                     _fact_id(observation.metric, observation.period)
                 )
             )
+    if demand_components:
+        missing_demand = [
+            item
+            for item in ("ethanol", "export_sales", "export_inspections")
+            if item not in demand_components
+        ]
+        updates["demand"] = freeze_evidence_value(
+            {
+                "status": "ready" if not missing_demand else "partial",
+                "commodity": "corn",
+                **demand_components,
+                "missing": missing_demand,
+            }
+        )
+        if missing_demand and "demand" not in missing:
+            missing.append("demand")
 
     quality = EvidenceQuality(
         status=base.quality.status,

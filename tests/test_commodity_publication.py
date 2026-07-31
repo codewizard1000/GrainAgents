@@ -190,3 +190,42 @@ def test_publication_reference_horizon_uses_matching_fact_ids():
     assert "fact_forecast_20d_interval_80" in bundle.final_outlook[
         "evidence_refs"
     ]
+
+
+@pytest.mark.unit
+def test_publication_uses_export_sales_and_retains_inspections_blocker():
+    evidence = _evidence()
+    evidence["demand"] = {
+        "status": "partial",
+        "export_sales": {"status": "ready"},
+        "missing": ["export_inspections"],
+    }
+    evidence["facts"].extend(
+        [
+            _fact(
+                "fact_fas_corn_weekly_exports_2026_07_23",
+                "fas_corn_weekly_exports",
+                1234567,
+            ),
+            _fact(
+                "fact_fas_corn_target_marketing_year_commitment_2026_07_23",
+                "fas_corn_target_marketing_year_commitment",
+                2345678,
+            ),
+        ]
+    )
+
+    bundle = build_publication_bundle(
+        evidence,
+        quantitative=_quantitative(),
+        scenarios=_scenarios(),
+    )
+    blocker_codes = {
+        blocker["code"]
+        for blocker in bundle.publication_status["blockers"]
+    }
+
+    assert "export_sales_unavailable" not in blocker_codes
+    assert "export_inspections_not_implemented" in blocker_codes
+    assert "1,234,567 metric tons" in bundle.newsletter
+    assert "[fact_fas_corn_weekly_exports_2026_07_23]" in bundle.newsletter
