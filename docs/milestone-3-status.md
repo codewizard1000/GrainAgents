@@ -9,6 +9,8 @@
   demand proxies.
 - Added USDA FAS weekly corn export sales, including current- and next-
   marketing-year commitments aggregated across reported destinations.
+- Added USDA AMS/FGIS weekly corn export inspections from the Open Ag
+  Transport dataset, including four-week and marketing-year-to-date totals.
 - Selected records by conservative `available_at` timestamps, not merely by
   report period.
 - Added raw official XML/JSON archives and SHA-256 hashes to every live run.
@@ -41,6 +43,12 @@ calendar and the official Thursday 8:30 a.m. America/New_York publication time,
 then archives both the release-calendar and export payloads. A free
 `USDA_FAS_API_KEY` from api.data.gov is required.
 
+AMS/FGIS inspections also use a current-run-only rule. Availability comes from
+the Socrata dataset's exact `rowsUpdatedAt` timestamp rather than an assumed
+Monday schedule, which safely accommodates holidays and corrections.
+Marketing-year totals filter on certification date so a boundary week's
+pre-September inspections are not assigned to the new corn marketing year.
+
 ## Live verification
 
 On 2026-07-30, the live adapters retrieved:
@@ -51,6 +59,9 @@ On 2026-07-30, the live adapters retrieved:
   labelled as an aggregate across all corn delivery months.
 - EIA U.S. fuel-ethanol production and ending stocks for the latest
   conservatively available week.
+- USDA AMS/FGIS corn export inspections for the week ending 2026-07-23:
+  1,488,028 metric tons for the week, a 1,597,617 metric-ton four-week
+  average, and 75,323,661 metric tons marketing-year-to-date.
 
 The FAS adapter is fixture-verified but is not yet live-verified in this
 workspace because `USDA_FAS_API_KEY` has not been configured.
@@ -63,7 +74,7 @@ workspace because `USDA_FAS_API_KEY` has not been configured.
 - CFTC retrieval currently requests the latest 80 reports; older historical
   runs fail safely.
 - CFTC positioning is market-level, not specific to one delivery contract.
-- FAS export inspections, complete weather anomalies, and live probability
-  calibration remain incomplete. The first price-only baseline ensemble is
-  documented in the Milestone 4 status.
+- Complete weather anomalies and live probability calibration remain
+  incomplete. The first price-only baseline ensemble is documented in the
+  Milestone 4 status.
 - The run remains publication-blocked and requires human approval.

@@ -10,6 +10,7 @@ from ..evidence import EvidencePackage, EvidenceQuality, freeze_evidence_value
 from .cftc import load_corn_cot
 from .eia import load_corn_ethanol
 from .fas import load_corn_export_sales
+from .inspections import load_corn_export_inspections
 from .models import OfficialDataError, OfficialSnapshot
 from .wasde import load_corn_wasde
 from .weather import load_corn_weather
@@ -35,6 +36,7 @@ def build_official_evidence(
     cftc_loader: OfficialLoader = load_corn_cot,
     eia_loader: OfficialLoader | None = load_corn_ethanol,
     fas_loader: OfficialLoader | None = load_corn_export_sales,
+    inspections_loader: OfficialLoader | None = load_corn_export_inspections,
     weather_loader: OfficialLoader | None = load_corn_weather,
 ) -> OfficialEvidenceRun:
     """Add point-in-time-safe official evidence without hiding source failures."""
@@ -67,6 +69,14 @@ def build_official_evidence(
                 },
             )
         )
+    if inspections_loader is not None:
+        loader_calls.append(
+            (
+                "USDA AMS export inspections",
+                inspections_loader,
+                {"as_of": base.as_of},
+            )
+        )
     if weather_loader is not None:
         loader_calls.append(
             ("NOAA/USDA weather", weather_loader, {"as_of": base.as_of})
@@ -90,6 +100,8 @@ def build_official_evidence(
                 if source_id == "source_eia_weekly_ethanol"
                 else "export_sales"
                 if source_id == "source_usda_fas_esr_corn"
+                else "export_inspections"
+                if source_id == "source_usda_ams_fgis_corn_inspections"
                 else str(source_id or "other")
             )
             demand_components[component] = dict(snapshot.section)

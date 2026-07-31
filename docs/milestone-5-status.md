@@ -100,7 +100,6 @@ comparison baseline.
 
 ## Next publication slice
 
-- Connect export inspections and grain-news evidence before making the draft
-  eligible for approval.
+- Connect grain-news evidence before making the draft eligible for approval.
 - Complete weather anomalies, 14-day forecasts, and yield-impact evidence.
 - Start saving forecast vintages for genuine future-outcome scoring.

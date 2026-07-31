@@ -19,8 +19,8 @@ publication.
 > exposure, an acreage-weighted seven-day NWS sample, and a rolling-validated
 > forecast ensemble with a regression-tree candidate that is admitted only
 > when it beats every transparent baseline out of sample. Weather anomalies,
-> export inspections, calibrated live forecast scoring, and final publication
-> remain intentionally incomplete. The current corn run now produces a deterministic
+> calibrated live forecast scoring, and final publication remain intentionally
+> incomplete. The current corn run now produces a deterministic
 > evidence-linked newsletter draft with an explicit blocker and human-approval
 > gate.
 
@@ -49,8 +49,8 @@ JSON, a blocked newsletter/final-outlook/risk bundle, and a CSV source audit.
 For a current-day run, it uses the
 most recent completed daily session rather than an incomplete intraday bar.
 The run remains `publication_ready: false` until complete weather anomalies,
-export inspections, out-of-sample forecast scoring, and editorial approval
-are implemented.
+out-of-sample forecast scoring, news/macro evidence, market-data publication
+rights, and editorial approval are implemented.
 
 The corn publication draft includes local PNG charts for exact-contract price
 and moving averages, the futures curve, CFTC positioning, indexed contract
@@ -102,8 +102,11 @@ government-shutdown backlog rather than guessing publication dates. The EIA
 current API is refused for historical as-of runs because it is not a vintage
 database. The FAS adapter uses the official release calendar, aggregates
 reported destinations, and refuses historical current-API replays because the
-endpoint can revise prior observations. Use `--no-official-data` only for
-offline technical testing.
+endpoint can revise prior observations. USDA AMS/FGIS export inspections use
+the public Open Ag Transport dataset without an API key; availability is tied
+to the dataset's exact update timestamp, and marketing-year totals use
+certification dates. Use `--no-official-data` only for offline technical
+testing.
 
 The forecast ensemble combines random-walk, weekly seasonal-naive, drift,
 local-linear-trend, and exponentially weighted price-change baselines with a

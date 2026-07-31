@@ -229,3 +229,48 @@ def test_publication_uses_export_sales_and_retains_inspections_blocker():
     assert "export_inspections_not_implemented" in blocker_codes
     assert "1,234,567 metric tons" in bundle.newsletter
     assert "[fact_fas_corn_weekly_exports_2026_07_23]" in bundle.newsletter
+
+
+@pytest.mark.unit
+def test_publication_clears_export_blockers_when_both_feeds_are_ready():
+    evidence = _evidence()
+    evidence["demand"] = {
+        "status": "ready",
+        "export_sales": {"status": "ready"},
+        "export_inspections": {"status": "ready"},
+        "missing": [],
+    }
+    evidence["facts"].extend(
+        [
+            _fact(
+                "fact_fas_corn_weekly_exports_2026_07_23",
+                "fas_corn_weekly_exports",
+                1234567,
+            ),
+            _fact(
+                "fact_fas_corn_target_marketing_year_commitment_2026_07_23",
+                "fas_corn_target_marketing_year_commitment",
+                2345678,
+            ),
+            _fact(
+                "fact_ams_corn_weekly_inspections_2026_07_23",
+                "ams_corn_weekly_inspections",
+                1488028,
+            ),
+        ]
+    )
+
+    bundle = build_publication_bundle(
+        evidence,
+        quantitative=_quantitative(),
+        scenarios=_scenarios(),
+    )
+    blocker_codes = {
+        blocker["code"]
+        for blocker in bundle.publication_status["blockers"]
+    }
+
+    assert "export_sales_unavailable" not in blocker_codes
+    assert "export_inspections_not_implemented" not in blocker_codes
+    assert "1,488,028 metric tons" in bundle.newsletter
+    assert "[fact_ams_corn_weekly_inspections_2026_07_23]" in bundle.newsletter

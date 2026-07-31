@@ -11,6 +11,9 @@ from tradingagents.commodities.official.cftc import (
 )
 from tradingagents.commodities.official.eia import load_corn_ethanol
 from tradingagents.commodities.official.fas import load_corn_export_sales
+from tradingagents.commodities.official.inspections import (
+    load_corn_export_inspections,
+)
 from tradingagents.commodities.official.models import OfficialSnapshot
 from tradingagents.commodities.official.pipeline import build_official_evidence
 from tradingagents.commodities.official.wasde import (
@@ -207,6 +210,7 @@ def test_official_pipeline_adds_sections_facts_sources_and_clears_missing():
         cftc_loader=cftc_loader,
         eia_loader=None,
         fas_loader=None,
+        inspections_loader=None,
         weather_loader=None,
     )
     payload = run.evidence.to_dict()
@@ -262,15 +266,26 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
             "source_usda_fas_esr_corn",
             {"status": "ready", "values": {"weekly_exports": 300}},
         ),
+        inspections_loader=snapshot_loader(
+            "demand",
+            "source_usda_ams_fgis_corn_inspections",
+            {"status": "ready", "values": {"weekly_inspections": 275}},
+        ),
         weather_loader=None,
     )
     payload = run.evidence.to_dict()
 
     assert payload["demand"]["ethanol"]["values"]["production"] == 1000
     assert payload["demand"]["export_sales"]["values"]["weekly_exports"] == 300
-    assert payload["demand"]["missing"] == ["export_inspections"]
-    assert payload["demand"]["status"] == "partial"
-    assert "demand" in payload["quality"]["missing_core_data"]
+    assert (
+        payload["demand"]["export_inspections"]["values"][
+            "weekly_inspections"
+        ]
+        == 275
+    )
+    assert payload["demand"]["missing"] == []
+    assert payload["demand"]["status"] == "ready"
+    assert "demand" not in payload["quality"]["missing_core_data"]
 
 
 class _EiaResponse:
@@ -416,6 +431,72 @@ def test_fas_refuses_current_api_for_historical_replay():
             today=date(2026, 7, 30),
             session=_FasSession(),
             api_key="fixture",
+        )
+
+
+class _InspectionsResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _InspectionsSession:
+    def get(self, url: str, **kwargs):
+        if "/api/views/" in url:
+            return _InspectionsResponse({"rowsUpdatedAt": 1785278317})
+        select = kwargs["params"]["$select"]
+        if select.startswith("date,grain"):
+            return _InspectionsResponse(
+                [
+                    {
+                        "date": period,
+                        "metric_tons": value,
+                        "records": "100",
+                    }
+                    for period, value in (
+                        ("2026-07-23T00:00:00.000", "1488028"),
+                        ("2026-07-16T00:00:00.000", "1612823"),
+                        ("2026-07-09T00:00:00.000", "1554620"),
+                        ("2026-07-02T00:00:00.000", "1734997"),
+                    )
+                ]
+            )
+        return _InspectionsResponse(
+            [{"metric_tons": "75323661", "records": "7218"}]
+        )
+
+
+@pytest.mark.unit
+def test_export_inspections_use_exact_dataset_update_and_cert_date_total():
+    snapshot = load_corn_export_inspections(
+        as_of=datetime(2026, 7, 30, 20, tzinfo=UTC),
+        today=date(2026, 7, 30),
+        session=_InspectionsSession(),
+        retrieved_at=datetime(2026, 7, 30, 21, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert values["week_ending"] == "2026-07-23"
+    assert values["weekly_inspections"] == 1488028
+    assert values["four_week_average_inspections"] == 1597617
+    assert values["market_year_to_date_inspections"] == 75323661
+    assert snapshot.section["market_year_start"] == "2025-09-01"
+    assert snapshot.source["rows_updated_at"] == "2026-07-28T22:38:37+00:00"
+    assert len(snapshot.observations) == 5
+
+
+@pytest.mark.unit
+def test_export_inspections_refuse_current_api_for_historical_replay():
+    with pytest.raises(RuntimeError, match="not vintage-safe"):
+        load_corn_export_inspections(
+            as_of=datetime(2026, 7, 29, 20, tzinfo=UTC),
+            today=date(2026, 7, 30),
+            session=_InspectionsSession(),
         )
 
 

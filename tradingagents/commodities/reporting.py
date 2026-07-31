@@ -247,6 +247,7 @@ def render_demand_report(evidence: dict[str, Any]) -> str:
         return "# Demand\n\nPoint-in-time-safe demand evidence was unavailable.\n"
     ethanol = section.get("ethanol")
     export_sales = section.get("export_sales")
+    export_inspections = section.get("export_inspections")
     if ethanol is None and "values" in section:
         ethanol = section
 
@@ -297,6 +298,58 @@ def render_demand_report(evidence: dict[str, Any]) -> str:
                 f"Target {export_sales['crop_year']} commitment",
                 "target_marketing_year_commitment",
             ),
+        )
+    if export_inspections:
+        values = export_inspections["values"]
+        period = export_inspections["week_ending"]
+        rows = (
+            ("Weekly inspections", "weekly_inspections", "metric tons"),
+            (
+                "Previous-week inspections",
+                "previous_week_inspections",
+                "metric tons",
+            ),
+            (
+                "Four-week average inspections",
+                "four_week_average_inspections",
+                "metric tons",
+            ),
+            (
+                "Week-over-week change",
+                "week_over_week_change_percent",
+                "percent",
+            ),
+            (
+                "Market-year-to-date inspections",
+                "market_year_to_date_inspections",
+                "metric tons",
+            ),
+        )
+        parts.extend(
+            [
+                "## USDA weekly export inspections",
+                "",
+                (
+                    f"**Marketing year begins:** "
+                    f"{export_inspections['market_year_start']}"
+                ),
+                "",
+                "| Metric | Week ending | Value | Unit | Evidence |",
+                "|---|---|---:|---|---|",
+                *[
+                    f"| {label} | {period} | {_number(values[metric], 2)} | "
+                    f"{unit} | "
+                    f"{_official_fact(f'ams_corn_{metric}', period)} |"
+                    for label, metric, unit in rows
+                ],
+                "",
+                (
+                    "Inspection totals use FGIS certification dates for the "
+                    "marketing-year boundary and the dataset's exact update "
+                    "timestamp for availability."
+                ),
+                "",
+            ]
         )
         parts.extend(
             [

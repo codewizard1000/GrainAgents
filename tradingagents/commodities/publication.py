@@ -309,6 +309,10 @@ def build_publication_bundle(
         evidence,
         "fas_corn_target_marketing_year_commitment",
     )
+    weekly_inspections = _find_optional_fact(
+        evidence,
+        "ams_corn_weekly_inspections",
+    )
     drought = _find_fact(evidence, "corn_drought_d1_or_worse_percent")
     precipitation = _find_fact(
         evidence,
@@ -431,12 +435,22 @@ This is a deterministic research draft, not an LLM-generated price forecast
 and not a trading or hedging recommendation.
 """
 
-    export_risk = (
-        "USDA export sales are connected, but export inspections remain "
-        "unavailable"
-        if weekly_exports is not None
-        else "export-sales and export-inspection evidence is unavailable"
-    )
+    if weekly_exports is not None and weekly_inspections is not None:
+        export_risk = "USDA export sales and inspections are connected"
+    elif weekly_exports is not None:
+        export_risk = (
+            "USDA export sales are connected, but export inspections remain "
+            "unavailable"
+        )
+    elif weekly_inspections is not None:
+        export_risk = (
+            "USDA export inspections are connected, but export sales remain "
+            "unavailable"
+        )
+    else:
+        export_risk = (
+            "export-sales and export-inspection evidence is unavailable"
+        )
     risk_report = f"""# Risk review — DRAFT
 
 - The reference 80% interval is
@@ -528,21 +542,34 @@ changed by {_number(changes["scenario_probability_bull"] * 100, 1)},
         "cot_positioning.png",
         "CFTC corn positioning",
     )
-    export_sales_text = (
-        "USDA FAS reports weekly corn exports of "
-        f"{_number(weekly_exports['value'], 0)} metric tons "
-        f"{_citation(weekly_exports)}. Target-marketing-year commitment is "
-        f"{_number(target_export_commitment['value'], 0)} metric tons "
-        f"{_citation(target_export_commitment)}. Export inspections remain "
-        "unavailable."
-        if weekly_exports is not None and target_export_commitment is not None
-        else (
-            "USDA weekly export sales and export inspections are not "
-            "available for this run."
+    export_parts = []
+    if weekly_exports is not None and target_export_commitment is not None:
+        export_parts.append(
+            "USDA FAS reports weekly corn exports of "
+            f"{_number(weekly_exports['value'], 0)} metric tons "
+            f"{_citation(weekly_exports)}. Target-marketing-year commitment is "
+            f"{_number(target_export_commitment['value'], 0)} metric tons "
+            f"{_citation(target_export_commitment)}."
         )
-    )
+    else:
+        export_parts.append(
+            "USDA weekly export sales are not available for this run."
+        )
+    if weekly_inspections is not None:
+        export_parts.append(
+            "USDA FGIS reports weekly corn export inspections of "
+            f"{_number(weekly_inspections['value'], 0)} metric tons "
+            f"{_citation(weekly_inspections)}."
+        )
+    else:
+        export_parts.append(
+            "USDA weekly export inspections are not available for this run."
+        )
+    export_sales_text = " ".join(export_parts)
     export_gap_text = (
-        "missing export-inspection and news evidence"
+        "missing news evidence"
+        if weekly_exports is not None and weekly_inspections is not None
+        else "missing export-inspection and news evidence"
         if weekly_exports is not None
         else "missing export and news evidence"
     )
