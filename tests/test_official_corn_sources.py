@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 import pytest
+import requests
 
 from tradingagents.commodities.evidence import build_evidence_package
 from tradingagents.commodities.official.cftc import (
@@ -22,6 +23,7 @@ from tradingagents.commodities.official.wasde import (
     parse_release_index,
 )
 from tradingagents.commodities.official.weather import load_corn_weather
+from tradingagents.commodities.reporting import render_demand_report
 
 UTC = timezone.utc
 
@@ -288,6 +290,59 @@ def test_official_pipeline_merges_domestic_and_export_demand_components():
     assert "demand" not in payload["quality"]["missing_core_data"]
 
 
+@pytest.mark.unit
+def test_demand_report_renders_all_three_components_without_row_collisions():
+    report = render_demand_report(
+        {
+            "demand": {
+                "status": "ready",
+                "ethanol": {
+                    "values": {
+                        "production": 1094,
+                        "production_period": "2026-07-17",
+                        "stocks": 24481,
+                        "stocks_period": "2026-07-17",
+                    }
+                },
+                "export_sales": {
+                    "crop_year": "2026/27",
+                    "target_role": "next_marketing_year",
+                    "week_ending": "2026-07-23",
+                    "unit": "metric_tons",
+                    "values": {
+                        "weekly_exports": 1528496,
+                        "accumulated_exports": 76373332,
+                        "outstanding_sales": 10602239,
+                        "current_my_net_sales": 362916,
+                        "current_my_total_commitment": 86975571,
+                        "next_my_outstanding_sales": 8623552,
+                        "next_my_net_sales": 1062421,
+                        "target_marketing_year_commitment": 8623552,
+                    },
+                },
+                "export_inspections": {
+                    "week_ending": "2026-07-23",
+                    "market_year_start": "2025-09-01",
+                    "values": {
+                        "weekly_inspections": 1488028,
+                        "previous_week_inspections": 1612823,
+                        "four_week_average_inspections": 1597617,
+                        "week_over_week_change_percent": -7.736,
+                        "market_year_to_date_inspections": 75323661,
+                    },
+                },
+                "missing": [],
+            }
+        }
+    )
+
+    assert "## Domestic ethanol proxy" in report
+    assert "## USDA weekly export sales" in report
+    assert "1,528,496" in report
+    assert "## USDA weekly export inspections" in report
+    assert "1,488,028" in report
+
+
 class _EiaResponse:
     def __init__(self, payload: dict):
         self._payload = payload
@@ -400,6 +455,65 @@ class _FasSession:
         return _FasResponse(rows)
 
 
+class _FailedFasResponse(_FasResponse):
+    def raise_for_status(self) -> None:
+        raise requests.HTTPError("fixture legacy gateway failure")
+
+
+class _FallbackFasSession:
+    token = "fixture-public-token-not-archived"
+
+    def post(self, url: str, **_kwargs):
+        assert url.endswith("/token")
+        return _FasResponse(
+            {
+                "access_token": self.token,
+                "expires_in": 3600,
+                "token_type": "bearer",
+            }
+        )
+
+    def get(self, url: str, **kwargs):
+        if "/OpenData/" in url:
+            return _FailedFasResponse([])
+        assert kwargs["headers"]["Authorization"] == f"Bearer {self.token}"
+        if url.endswith("/GetPublishedDateAndWeekEndingDate"):
+            return _FasResponse(
+                {
+                    "weekendingdate": "2026-07-23T00:00:00",
+                    "publisedDate": "2026-07-30T08:30:09.927",
+                }
+            )
+        if url.endswith("/lookups/Commodities"):
+            return _FasResponse(
+                [
+                    {
+                        "id": 10,
+                        "commodityCode": 401,
+                        "commodityName": "CORN - UNMILLED",
+                    }
+                ]
+            )
+        return _FasResponse(
+            [
+                {
+                    "commodityId": 10,
+                    "commodityName": "CORN - UNMILLED",
+                    "weekNumber": 47,
+                    "myDefinition": "Sep 2025/Aug 2026",
+                    "weekEndingDate": "2026-07-23T00:00:00",
+                    "weeklyExport": 1528496,
+                    "netSales": 362916,
+                    "outstandingSales": 10602239,
+                    "accumulatedExport": 76373332,
+                    "nextYearOutstandingSales": 8623552,
+                    "nextYearNetSales": 1062421,
+                    "mycoTypeName": "Standard",
+                }
+            ]
+        )
+
+
 @pytest.mark.unit
 def test_fas_export_sales_aggregates_latest_week_and_targets_next_crop():
     snapshot = load_corn_export_sales(
@@ -419,6 +533,32 @@ def test_fas_export_sales_aggregates_latest_week_and_targets_next_crop():
     assert values["target_marketing_year_commitment"] == 2400
     assert snapshot.section["unit"] == "metric_tons"
     assert len(snapshot.observations) == 9
+    assert b"not-written-to-output" not in snapshot.raw_content
+
+
+@pytest.mark.unit
+def test_fas_falls_back_to_public_esrqs_when_legacy_gateway_fails():
+    session = _FallbackFasSession()
+    snapshot = load_corn_export_sales(
+        as_of=datetime(2026, 7, 30, 20, tzinfo=UTC),
+        crop_year="2026/27",
+        today=date(2026, 7, 30),
+        session=session,
+        api_key="not-written-to-output",
+        retrieved_at=datetime(2026, 7, 30, 21, tzinfo=UTC),
+    )
+
+    values = snapshot.section["values"]
+    assert snapshot.section["api_mode"] == "esrqs_public"
+    assert snapshot.source["api_key_mode"] == "not_required_esrqs_public"
+    assert values["weekly_exports"] == 1528496
+    assert values["current_my_total_commitment"] == 86975571
+    assert values["target_marketing_year_commitment"] == 8623552
+    assert snapshot.section["released_at"] == (
+        "2026-07-30T12:30:09.927000+00:00"
+    )
+    assert len(snapshot.observations) == 8
+    assert session.token.encode() not in snapshot.raw_content
     assert b"not-written-to-output" not in snapshot.raw_content
 
 

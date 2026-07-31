@@ -14,9 +14,15 @@ from .models import OfficialDataError, OfficialObservation, OfficialSnapshot
 
 API_BASE = "https://apps.fas.usda.gov/OpenData/api/esr"
 DOCUMENTATION_URL = "https://apps.fas.usda.gov/opendata/swagger/ui/index"
+ESRQS_BASE = "https://apps.fas.usda.gov/esrqs"
+ESRQS_SOURCE_URL = "https://apps.fas.usda.gov/esrqs/"
 SOURCE_ID = "source_usda_fas_esr_corn"
 COMMODITY_CODE = 401
 NEW_YORK = ZoneInfo("America/New_York")
+PUBLIC_CLIENT_SECRET = (
+    "00000000-0000-0000-0000-000000000000"
+    "00000000-0000-0000-0000-000000000000"
+)
 METRICS = {
     "weeklyExports": "weekly_exports",
     "accumulatedExports": "accumulated_exports",
@@ -29,17 +35,12 @@ METRICS = {
 }
 
 
-def _api_key(explicit: str | None) -> str:
-    key = (
+def _configured_api_key(explicit: str | None) -> str | None:
+    return (
         explicit
         or os.getenv("USDA_FAS_API_KEY")
         or os.getenv("DATA_GOV_API_KEY")
     )
-    if not key:
-        raise OfficialDataError(
-            "USDA FAS export sales requires USDA_FAS_API_KEY from api.data.gov"
-        )
-    return key
 
 
 def _rows(payload: object, *, label: str) -> list[dict]:
@@ -116,6 +117,206 @@ def _get_json(
         raise OfficialDataError(
             f"USDA FAS {label} request failed: {safe_error}"
         ) from exc
+
+
+def _esrqs_public_token(client: requests.Session) -> str:
+    try:
+        response = client.post(
+            f"{ESRQS_BASE}/token",
+            data={
+                "client_id": "eAuth_Client",
+                "client_secret": PUBLIC_CLIENT_SECRET,
+                "grant_type": "client_credentials",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        token = payload["access_token"]
+    except (
+        requests.RequestException,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise OfficialDataError(
+            f"USDA ESRQS public-token request failed: {exc}"
+        ) from exc
+    if not isinstance(token, str) or not token:
+        raise OfficialDataError("USDA ESRQS public-token response is invalid")
+    return token
+
+
+def _esrqs_get_json(
+    client: requests.Session,
+    path: str,
+    *,
+    token: str,
+    label: str,
+    params: dict[str, object] | None = None,
+) -> object:
+    try:
+        response = client.get(
+            f"{ESRQS_BASE}/api{path}",
+            params=params,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "GrainAgents/1.0 research@example.invalid",
+            },
+            timeout=90,
+        )
+        response.raise_for_status()
+        return response.json()
+    except (requests.RequestException, TypeError, ValueError) as exc:
+        safe_error = str(exc).replace(token, "[REDACTED]")
+        raise OfficialDataError(
+            f"USDA ESRQS {label} request failed: {safe_error}"
+        ) from exc
+
+
+def _esrqs_release_available_at(value: object) -> datetime:
+    try:
+        local = datetime.fromisoformat(str(value)).replace(tzinfo=NEW_YORK)
+    except ValueError as exc:
+        raise OfficialDataError(
+            "USDA ESRQS publication timestamp is invalid"
+        ) from exc
+    return local.astimezone(timezone.utc)
+
+
+def _load_esrqs_current(
+    client: requests.Session,
+    *,
+    as_of: datetime,
+) -> dict[str, object]:
+    token = _esrqs_public_token(client)
+    publication = _esrqs_get_json(
+        client,
+        "/reports/GetPublishedDateAndWeekEndingDate",
+        token=token,
+        label="publication calendar",
+    )
+    commodities = _esrqs_get_json(
+        client,
+        "/lookups/Commodities",
+        token=token,
+        label="commodity lookup",
+    )
+    if not isinstance(publication, dict) or not isinstance(commodities, list):
+        raise OfficialDataError("USDA ESRQS public metadata is invalid")
+    try:
+        week_ending = _parse_date(
+            publication["weekendingdate"],
+            label="week-ending",
+        )
+        available_at = _esrqs_release_available_at(
+            publication["publisedDate"]
+        )
+        commodity_id = next(
+            int(row["id"])
+            for row in commodities
+            if isinstance(row, dict)
+            and int(row.get("commodityCode", -1)) == COMMODITY_CODE
+        )
+    except (KeyError, StopIteration, TypeError, ValueError) as exc:
+        raise OfficialDataError(
+            "USDA ESRQS corn publication metadata is invalid"
+        ) from exc
+    if available_at > as_of.astimezone(timezone.utc):
+        raise OfficialDataError(
+            "latest USDA ESRQS corn release was not yet available as of the "
+            "analysis timestamp"
+        )
+
+    historical = _esrqs_get_json(
+        client,
+        "/reports/WeeklyHistorialReportData",
+        token=token,
+        label="corn weekly history",
+        params={
+            "WeekEndingDate": week_ending.strftime("%m/%d/%Y"),
+            "CommodityId": commodity_id,
+        },
+    )
+    if not isinstance(historical, list):
+        raise OfficialDataError(
+            "USDA ESRQS corn weekly history has no data list"
+        )
+    selected = [
+        row
+        for row in historical
+        if isinstance(row, dict)
+        and _parse_date(
+            row.get("weekEndingDate"),
+            label="week-ending",
+        )
+        == week_ending
+        and row.get("mycoTypeName") == "Standard"
+    ]
+    if len(selected) != 1:
+        raise OfficialDataError(
+            "USDA ESRQS latest corn week is missing or ambiguous"
+        )
+    row = selected[0]
+    try:
+        values = {
+            "weekly_exports": _numeric(
+                row["weeklyExport"],
+                metric="weeklyExport",
+            ),
+            "accumulated_exports": _numeric(
+                row["accumulatedExport"],
+                metric="accumulatedExport",
+            ),
+            "outstanding_sales": _numeric(
+                row["outstandingSales"],
+                metric="outstandingSales",
+            ),
+            "current_my_net_sales": _numeric(
+                row["netSales"],
+                metric="netSales",
+            ),
+            "next_my_outstanding_sales": _numeric(
+                row["nextYearOutstandingSales"],
+                metric="nextYearOutstandingSales",
+            ),
+            "next_my_net_sales": _numeric(
+                row["nextYearNetSales"],
+                metric="nextYearNetSales",
+            ),
+        }
+    except KeyError as exc:
+        raise OfficialDataError(
+            "USDA ESRQS latest corn row is incomplete"
+        ) from exc
+    values["current_my_total_commitment"] = (
+        values["accumulated_exports"] + values["outstanding_sales"]
+    )
+    return {
+        "period": week_ending,
+        "available_at": available_at,
+        "unit_id": 1,
+        "values": values,
+        "country_count": 0,
+        "release_timestamp": publication["publisedDate"],
+        "archive": {
+            "api_mode": "esrqs_public",
+            "publication": publication,
+            "commodities": commodities,
+            "historical": historical,
+        },
+        "source_url": ESRQS_SOURCE_URL,
+        "dataset": "ESRQS Weekly Historical Report",
+        "api_mode": "esrqs_public",
+        "availability_policy": (
+            "current operational runs only; exact ESRQS publication timestamp"
+        ),
+        "metadata": {
+            "commodity_id": commodity_id,
+            "marketing_year_definition": row.get("myDefinition"),
+            "week_number": row.get("weekNumber"),
+        },
+    }
 
 
 def _release_record(
@@ -200,7 +401,7 @@ def load_corn_export_sales(
             "runs; use a previously captured raw archive"
         )
 
-    key = _api_key(api_key)
+    key = _configured_api_key(api_key)
     client = session or requests.Session()
     market_year = _current_corn_market_year(as_of.date())
     target_market_year = _target_market_year(crop_year)
@@ -210,34 +411,75 @@ def load_corn_export_sales(
             f"market year as of {as_of.date().isoformat()}"
         )
 
-    release_payload = _get_json(
-        client,
-        f"{API_BASE}/datareleasedates",
-        api_key=key,
-        label="release calendar",
-    )
-    release_row, available_at = _release_record(
-        _rows(release_payload, label="release calendar"),
-        market_year=market_year,
-    )
-    if available_at > as_of.astimezone(timezone.utc):
-        raise OfficialDataError(
-            "latest USDA FAS corn release was not yet available as of the "
-            "analysis timestamp"
-        )
-
-    exports_payload = _get_json(
-        client,
-        (
-            f"{API_BASE}/exports/commodityCode/{COMMODITY_CODE}"
-            f"/allCountries/marketYear/{market_year}"
-        ),
-        api_key=key,
-        label="corn export sales",
-    )
-    period, unit_id, values, country_count = _aggregate_latest_week(
-        _rows(exports_payload, label="corn export sales")
-    )
+    legacy_error: str | None = None
+    if key:
+        try:
+            release_payload = _get_json(
+                client,
+                f"{API_BASE}/datareleasedates",
+                api_key=key,
+                label="release calendar",
+            )
+            release_row, available_at = _release_record(
+                _rows(release_payload, label="release calendar"),
+                market_year=market_year,
+            )
+            if available_at > as_of.astimezone(timezone.utc):
+                raise OfficialDataError(
+                    "latest USDA FAS corn release was not yet available as "
+                    "of the analysis timestamp"
+                )
+            exports_payload = _get_json(
+                client,
+                (
+                    f"{API_BASE}/exports/commodityCode/{COMMODITY_CODE}"
+                    f"/allCountries/marketYear/{market_year}"
+                ),
+                api_key=key,
+                label="corn export sales",
+            )
+            period, unit_id, values, country_count = _aggregate_latest_week(
+                _rows(exports_payload, label="corn export sales")
+            )
+            archive = {
+                "api_mode": "legacy_opendata",
+                "release_calendar": release_payload,
+                "exports": exports_payload,
+            }
+            source_url = DOCUMENTATION_URL
+            dataset = "U.S. Weekly Export Sales of Agricultural Commodities"
+            api_mode = "legacy_opendata"
+            availability_policy = (
+                "current operational runs only; exact FAS release-calendar "
+                "date at 8:30 a.m. America/New_York"
+            )
+            source_metadata: dict[str, object] = {}
+            release_timestamp = release_row["releaseTimeStamp"]
+        except OfficialDataError as exc:
+            legacy_error = str(exc)
+    if not key or legacy_error is not None:
+        esrqs = _load_esrqs_current(client, as_of=as_of)
+        period = esrqs["period"]
+        available_at = esrqs["available_at"]
+        unit_id = esrqs["unit_id"]
+        values = esrqs["values"]
+        country_count = esrqs["country_count"]
+        archive = esrqs["archive"]
+        source_url = esrqs["source_url"]
+        dataset = esrqs["dataset"]
+        api_mode = esrqs["api_mode"]
+        availability_policy = esrqs["availability_policy"]
+        source_metadata = esrqs["metadata"]
+        release_timestamp = esrqs["release_timestamp"]
+        if not isinstance(period, date) or not isinstance(
+            available_at,
+            datetime,
+        ):
+            raise OfficialDataError("USDA ESRQS normalized dates are invalid")
+        if not isinstance(values, dict) or not isinstance(unit_id, int):
+            raise OfficialDataError("USDA ESRQS normalized values are invalid")
+        if not isinstance(country_count, int):
+            raise OfficialDataError("USDA ESRQS normalized scope is invalid")
     role = (
         "current_marketing_year"
         if target_market_year == market_year
@@ -267,12 +509,9 @@ def load_corn_export_sales(
                 available_at=available_at,
                 retrieved_at=retrieved,
                 source_id=SOURCE_ID,
-                source_url=DOCUMENTATION_URL,
+                source_url=str(source_url),
                 vintage=retrieved.isoformat(),
-                availability_policy=(
-                    "current operational runs only; exact FAS release-calendar "
-                    "date at 8:30 a.m. America/New_York"
-                ),
+                availability_policy=str(availability_policy),
                 metadata={
                     "commodity_code": COMMODITY_CODE,
                     "market_year": market_year,
@@ -280,14 +519,12 @@ def load_corn_export_sales(
                     "target_role": role,
                     "country_rows": country_count,
                     "unit_id": unit_id,
+                    "api_mode": api_mode,
+                    **source_metadata,
                 },
             )
         )
 
-    archive = {
-        "release_calendar": release_payload,
-        "exports": exports_payload,
-    }
     raw_content = (
         json.dumps(archive, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     )
@@ -306,21 +543,29 @@ def load_corn_export_sales(
         "unit": unit,
         "values": values,
         "country_rows": country_count,
-        "availability_policy": "current_run_only_exact_release_calendar",
+        "api_mode": api_mode,
+        "availability_policy": (
+            "current_run_only_exact_official_publication_timestamp"
+        ),
     }
     source = {
         "source_id": SOURCE_ID,
         "provider": "USDA FAS",
-        "dataset": "U.S. Weekly Export Sales of Agricultural Commodities",
-        "source_url": DOCUMENTATION_URL,
+        "dataset": dataset,
+        "source_url": source_url,
         "commodity_code": COMMODITY_CODE,
         "market_year": market_year,
         "retrieved_at": retrieved.isoformat(),
         "vintage": retrieved.isoformat(),
-        "release_timestamp": release_row["releaseTimeStamp"],
+        "release_timestamp": release_timestamp,
         "sha256": digest,
         "license_scope": "official_public_data",
-        "api_key_mode": "configured",
+        "api_key_mode": (
+            "configured_legacy"
+            if api_mode == "legacy_opendata"
+            else "not_required_esrqs_public"
+        ),
+        "legacy_api_error": legacy_error,
     }
     return OfficialSnapshot(
         section_name="demand",

@@ -93,16 +93,18 @@ historical and curve request.
 
 USDA WASDE and CFTC COT use public official endpoints and require no additional
 API keys. EIA weekly ethanol data uses its public `DEMO_KEY` for low-volume
-testing unless `EIA_API_KEY` is configured. USDA FAS weekly export sales
-requires a free [api.data.gov key](https://api.data.gov/signup/) stored as
-`USDA_FAS_API_KEY` in the ignored `.env` file. Raw XML/JSON payloads are
+testing unless `EIA_API_KEY` is configured. USDA FAS weekly export sales use
+the current public ESRQS report API. An optional
+[api.data.gov key](https://api.data.gov/signup/) can be stored as
+`USDA_FAS_API_KEY` for the legacy OpenData gateway. Raw XML/JSON payloads are
 archived under `official_data/` with SHA-256 hashes in the source records. The CFTC
 adapter applies a conservative availability lag and refuses the 2025
 government-shutdown backlog rather than guessing publication dates. The EIA
 current API is refused for historical as-of runs because it is not a vintage
-database. The FAS adapter uses the official release calendar, aggregates
-reported destinations, and refuses historical current-API replays because the
-endpoint can revise prior observations. USDA AMS/FGIS export inspections use
+database. The FAS adapter uses the exact official ESRQS publication timestamp,
+falls back automatically when the legacy OpenData gateway fails, and refuses
+historical current-API replays because the source can revise prior
+observations. USDA AMS/FGIS export inspections use
 the public Open Ag Transport dataset without an API key; availability is tied
 to the dataset's exact update timestamp, and marketing-year totals use
 certification dates. Use `--no-official-data` only for offline technical

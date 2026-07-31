@@ -276,6 +276,10 @@ def analyze(
             "curve_contracts": list(run.curve_histories),
         },
     )
+    official_archive_paths = write_official_archives(
+        run_dir / "official_data",
+        official_run.archives if official_run is not None else (),
+    )
     report_path = run_dir / "technical_report.md"
     report_path.write_text(render_technical_report(payload), encoding="utf-8")
     supply_demand_path = run_dir / "supply_demand_report.md"
@@ -343,10 +347,6 @@ def analyze(
             risk_path,
             news_path,
         ]
-    official_archive_paths = write_official_archives(
-        run_dir / "official_data",
-        official_run.archives if official_run is not None else (),
-    )
     audit_path = run_dir / "source_audit.csv"
     write_source_audit(audit_path, payload)
 
@@ -383,6 +383,8 @@ def analyze(
                     "CFTC",
                     "EIA",
                     "NOAA/NIDIS, NWS, and USDA NASS",
+                    "USDA FAS",
+                    "USDA AMS/FGIS",
                 }
             ],
         },

@@ -283,10 +283,10 @@ def render_demand_report(evidence: dict[str, Any]) -> str:
             ]
         )
     if export_sales:
-        values = export_sales["values"]
-        period = export_sales["week_ending"]
-        unit = export_sales["unit"].replace("_", " ")
-        rows = (
+        sales_values = export_sales["values"]
+        sales_period = export_sales["week_ending"]
+        sales_unit = export_sales["unit"].replace("_", " ")
+        sales_rows = (
             ("Weekly exports", "weekly_exports"),
             ("Accumulated exports", "accumulated_exports"),
             ("Outstanding sales", "outstanding_sales"),
@@ -299,10 +299,36 @@ def render_demand_report(evidence: dict[str, Any]) -> str:
                 "target_marketing_year_commitment",
             ),
         )
+        parts.extend(
+            [
+                "## USDA weekly export sales",
+                "",
+                (
+                    f"**Target role:** "
+                    f"{export_sales['target_role'].replace('_', ' ')}"
+                ),
+                "",
+                "| Metric | Week ending | Value | Unit | Evidence |",
+                "|---|---|---:|---|---|",
+                *[
+                    f"| {label} | {sales_period} | "
+                    f"{_number(sales_values[metric], 0)} | "
+                    f"{sales_unit} | "
+                    f"{_official_fact(f'fas_corn_{metric}', sales_period)} |"
+                    for label, metric in sales_rows
+                ],
+                "",
+                (
+                    "FAS figures aggregate all reported destinations and "
+                    "provide current- and next-marketing-year context."
+                ),
+                "",
+            ]
+        )
     if export_inspections:
-        values = export_inspections["values"]
-        period = export_inspections["week_ending"]
-        rows = (
+        inspection_values = export_inspections["values"]
+        inspection_period = export_inspections["week_ending"]
+        inspection_rows = (
             ("Weekly inspections", "weekly_inspections", "metric tons"),
             (
                 "Previous-week inspections",
@@ -337,41 +363,17 @@ def render_demand_report(evidence: dict[str, Any]) -> str:
                 "| Metric | Week ending | Value | Unit | Evidence |",
                 "|---|---|---:|---|---|",
                 *[
-                    f"| {label} | {period} | {_number(values[metric], 2)} | "
-                    f"{unit} | "
-                    f"{_official_fact(f'ams_corn_{metric}', period)} |"
-                    for label, metric, unit in rows
+                    f"| {label} | {inspection_period} | "
+                    f"{_number(inspection_values[metric], 2)} | "
+                    f"{inspection_unit} | "
+                    f"{_official_fact(f'ams_corn_{metric}', inspection_period)} |"
+                    for label, metric, inspection_unit in inspection_rows
                 ],
                 "",
                 (
                     "Inspection totals use FGIS certification dates for the "
                     "marketing-year boundary and the dataset's exact update "
                     "timestamp for availability."
-                ),
-                "",
-            ]
-        )
-        parts.extend(
-            [
-                "## USDA weekly export sales",
-                "",
-                (
-                    f"**Target role:** "
-                    f"{export_sales['target_role'].replace('_', ' ')}"
-                ),
-                "",
-                "| Metric | Week ending | Value | Unit | Evidence |",
-                "|---|---|---:|---|---|",
-                *[
-                    f"| {label} | {period} | {_number(values[metric], 0)} | "
-                    f"{unit} | "
-                    f"{_official_fact(f'fas_corn_{metric}', period)} |"
-                    for label, metric in rows
-                ],
-                "",
-                (
-                    "FAS figures aggregate reported destinations. Export "
-                    "inspections remain a separate missing confirmation series."
                 ),
                 "",
             ]

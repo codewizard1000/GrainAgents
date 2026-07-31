@@ -37,11 +37,13 @@ Historical as-of calls are refused because the endpoint is not a vintage
 database. Weekly observations are conservatively delayed seven calendar days,
 and the archived response from each live run is retained for future replay.
 
-FAS export sales follow the same current-run-only rule because the API can
-revise earlier observations. GrainAgents uses FAS's commodity-level release
-calendar and the official Thursday 8:30 a.m. America/New_York publication time,
-then archives both the release-calendar and export payloads. A free
-`USDA_FAS_API_KEY` from api.data.gov is required.
+FAS export sales follow the same current-run-only rule because the source can
+revise earlier observations. GrainAgents prefers the legacy OpenData endpoint
+when an optional `USDA_FAS_API_KEY` is configured, then automatically falls
+back to the current public ESRQS report API if that gateway fails. ESRQS's exact
+publication timestamp is the availability boundary, and its commodity lookup,
+publication record, and historical report payload are archived without the
+short-lived public-user token.
 
 AMS/FGIS inspections also use a current-run-only rule. Availability comes from
 the Socrata dataset's exact `rowsUpdatedAt` timestamp rather than an assumed
@@ -62,9 +64,13 @@ On 2026-07-30, the live adapters retrieved:
 - USDA AMS/FGIS corn export inspections for the week ending 2026-07-23:
   1,488,028 metric tons for the week, a 1,597,617 metric-ton four-week
   average, and 75,323,661 metric tons marketing-year-to-date.
-
-The FAS adapter is fixture-verified but is not yet live-verified in this
-workspace because `USDA_FAS_API_KEY` has not been configured.
+- USDA ESRQS corn export sales for the week ending 2026-07-23: 1,528,496
+  metric tons exported, 362,916 metric tons of current-marketing-year net
+  sales, and 8,623,552 metric tons of next-marketing-year outstanding sales.
+  The report was published at 8:30:09 a.m. America/New_York on 2026-07-30.
+- The configured api.data.gov key was independently validated. The legacy FAS
+  gateway returned HTTP 500 for valid and invalid header values, and the ESRQS
+  fallback completed successfully without storing either credential.
 
 ## Current limitations
 
